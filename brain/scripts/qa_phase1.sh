@@ -20,7 +20,8 @@ echo "=== Phase 1 QA: text turn ===" | tee "$EVIDENCE"
 } | tee -a "$EVIDENCE"
 
 set +e
-CHAT_OUT="$(cd "$ROOT/brain" && python -m jarvis_brain chat -m "hola, prueba de fase 1" 2>&1)"
+PY="${PYTHON:-python3}"
+CHAT_OUT="$(cd "$ROOT/brain" && "$PY" -m jarvis_brain chat -m "hola, prueba de fase 1" 2>&1)"
 CHAT_RC=$?
 set -e
 printf '%s\n' "$CHAT_OUT" | tee -a "$EVIDENCE"
@@ -35,7 +36,7 @@ if [[ -f /tmp/jarvis-mock-llm-last.json ]]; then
 fi
 
 echo "=== bus HTTP ===" | tee -a "$EVIDENCE"
-python - <<'PY' | tee -a "$EVIDENCE"
+"$PY" - <<'PY' | tee -a "$EVIDENCE"
 from fastapi.testclient import TestClient
 from jarvis_brain.bus.envelope import new_event
 from jarvis_brain.bus.server import EventBus

@@ -23,10 +23,10 @@ bash scripts/run_phase1_stack.sh
 # un turno
 export API_SERVER_KEY=jarvis-phase1-key
 export JARVIS_HERMES_URL=http://127.0.0.1:8642
-python -m jarvis_brain chat -m "hola"
+python3 -m jarvis_brain chat -m "hola"
 
 # o interactivo
-python -m jarvis_brain chat
+python3 -m jarvis_brain chat
 
 # QA obligatorio (stack + turno + evidencia)
 bash scripts/qa_phase1.sh

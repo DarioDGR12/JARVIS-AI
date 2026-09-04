@@ -35,7 +35,7 @@ model:
   model: mock-jarvis
   base_url: http://127.0.0.1:18765/v1
   api_key: sk-local
-  context_length: 8192
+  context_length: 65536
   streaming: false
 EOF
 
@@ -75,4 +75,4 @@ else
   done
 fi
 
-echo "Then: cd $ROOT/brain && API_SERVER_KEY=$API_SERVER_KEY python -m jarvis_brain chat -m 'hola'"
+echo "Then: cd $ROOT/brain && API_SERVER_KEY=$API_SERVER_KEY python3 -m jarvis_brain chat -m 'hola'"

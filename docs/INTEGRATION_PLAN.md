@@ -1,6 +1,6 @@
 # Plan de integración JARVIS-AI
 
-**Estado:** propuesta — no hay implementación todavía.  
+**Estado:** Fase 1 del cerebro implementada (bus + Hermes + turno de texto). Siguientes fases no tocadas.  
 **Fecha:** 2026-09-04  
 **Repo:** [DarioDGR12/JARVIS-AI](https://github.com/DarioDGR12/JARVIS-AI) (licencia Apache-2.0)  
 **Plataforma objetivo:** Pop!_OS (COSMIC / GNOME, Linux, Wayland)  
@@ -792,7 +792,7 @@ No hay dos modelos. No hay toggle en el HUD. El clasificador vive en el cerebro,
 
 **Histéresis:** cambiar solo si `confidence ≥ 0.65` y (180 s desde el último cambio **o** señal fuerte). Boot = `jarvis`. “Sé más formal / más cercano” es una señal más, no un modo permanente.
 
-**NO VERIFICADO:** que `POST /api/sessions/{id}/chat/stream` acepte `instructions` en la Hermes que instalemos. Plan B: `HERMES_EPHEMERAL_SYSTEM_PROMPT` o Responses API. Elegir con un `curl` en Fase 1.
+**VERIFICADO en runtime (2026-09-04, Hermes 0.21.0):** `POST /api/sessions/{id}/chat/stream` acepta `instructions`. Hermes lo pasa a `ephemeral_system_prompt` y lo concatena al system prompt del modelo. Evidencia: el mock LLM vio `JARVIS_PHASE1_OK` en `messages[].role=system` y la respuesta del turno lo incluyó. Requisitos: `API_SERVER_KEY` ≥ 16 caracteres (si no, el API en :8642 no arranca) y `model.context_length` ≥ 65536.
 
 eadmin2 `main` **no** cablea `hermes.instructions`. Es el primer parche del cerebro.
 
@@ -845,9 +845,9 @@ El monorepo ya es **Apache-2.0**. Una guía de pago sobre código Apache/MIT es 
 
 ---
 
-## 8. Fases (cuando apruebes — no ahora)
+## 8. Fases
 
-1. **Bus + cerebro + Hermes** en Pop!_OS. Cablear `instructions`. systemd. `requirements.lock`. Smoke: texto → Hermes → texto.  
+1. **Bus + cerebro + Hermes** — **hecho** (turno de texto + `instructions` verificado). systemd/`requirements.lock` quedan para el empaquetado en Pop!_OS.  
 2. **Voz local:** STT + **RealtimeTTS/Chatterbox** + openWakeWord. Piper = fallback. Phrase-map. Extra `[tts]`.  
 3. **HUD reimplementado** + WS + gestos pinch/spread + `hud.ready`. Chromium kiosk.  
 4. **Vista `map`:** vendor SENTINEL + bridge `postMessage` + adaptador WebcamMap (extracto).  
@@ -864,7 +864,7 @@ El monorepo ya es **Apache-2.0**. Una guía de pago sobre código Apache/MIT es 
 ## 9. Riesgos abiertos (no esconder)
 
 1. Hermes API drift (eadmin2 escrito contra v0.16; Hermes empuja a diario).  
-2. `instructions` en session stream: NO VERIFICADO en runtime.  
+2. `instructions` en session stream: **verificado** en Hermes 0.21.0 (Fase 1). El overlay llega al system prompt.  
 3. eadmin2 `main` no es first-class Linux.  
 4. Deps de voz sin pin (RealtimeSTT / torch).  
 5. Wayland/COSMIC captura de pantalla: trabajo nuevo, no un fork de OMP.  
@@ -969,7 +969,7 @@ Verifiqué yo (no solo los informes):
 - eadmin2 hoy habla `summon_panel` / `agent_status` / PCM. El cerebro **traduce** a `hud.*` — capa adapter, no se pide que eadmin2 ya cumpla el envelope.  
 - SENTINEL no exporta focus/query hasta el bridge.  
 - Visión no corre en Pop!_OS hasta el portal.  
-- `instructions` de Hermes: NO VERIFICADO.  
+- `instructions` de Hermes: **verificado en runtime** (Hermes 0.21.0). Overlay en session stream → system prompt. `API_SERVER_KEY` ≥ 16; `model.context_length` ≥ 64K.  
 - Howdy 2.6.1 vs 3.0: el wrapper resuelve `COMPARE_PROCESS_PATH`.  
 - DeepCamera no emite `surveillance.alert`; el adaptador lo sintetiza.  
 - TTS: `ChatterboxEngine` + extra `[chatterbox]` verificados. `LICENSE` MIT. No hay `howdy`-style API inventada: `generate()` es clip-por-oración.  
