@@ -25,6 +25,7 @@ Este documento es el entregable de seis agentes especializados (más Howdy como 
 | Transporte | WebSocket JSON `ws://127.0.0.1:<port>/ws/bus` + canal de voz PCM aparte |
 | Auth facial (Howdy) | **Capa del cerebro**, no módulo aparte. Howdy es binario del SO (`compare.py`). Antes de HA write / fs write / shell: `auth.challenge` → cara → cache TTL 5 min. Sin switch manual |
 | Vigilancia (Agente 6) | Adaptador + **YOLO26n headless** (skill de DeepCamera). Corre en paralelo, **avisa solo**. Face rec / Aegis / VLM / Shinobi **apagados**. Eventos `surveillance.*` |
+| TTS (voz) | **RealtimeTTS 0.8.5 + Chatterbox Turbo/Nano** (MIT, local, GPU). Piper MIT = fallback CPU. **ElevenLabs fuera** (ni default ni fallback automático) |
 
 Si esto te encaja, el siguiente paso (cuando lo apruebes) es Fase 1: bus de eventos + cerebro + Hermes, sin HUD todavía.
 
@@ -237,7 +238,7 @@ Hermes no trae STT/TTS, wake word, HUD ni bus para mapa/HA/visión. eadmin2 ya r
 **Módulos sueltos a reimplementar (ideas de novik133, código nuevo MIT/Apache):**
 
 - Wake word: preferir **openWakeWord** (`hey_jarvis`) del client de eadmin2; whisper-substring de novik133 solo como fallback CPU.  
-- TTS default Linux: **Piper** (local, $0). ElevenLabs = provider opcional BYOK. Kokoro (issue #4, no en `main`) = candidato 2.  
+- TTS default: **RealtimeTTS + Chatterbox** (local, GPU). Piper (binario MIT, no el de novik133) = fallback si Chatterbox no carga. **ElevenLabs no entra.** Kokoro (issue #4 eadmin2, no mergeado) se deja atrás.  
 - Phrase-map: “sube volumen / bloquea sesión” **antes** de Hermes.  
 - `system.stats` desde `/proc`.
 
@@ -635,6 +636,67 @@ DeepCamera **no** se embebe. El adaptador alimenta `detect.py` (JSONL) y **sinte
 
 **Fork:** implementar contra el skill de **SharpAI/DeepCamera** (o un fork sincronizado). Alanbk101 está 86 commits atrás.
 
+### 4.10 TTS — RealtimeTTS + Chatterbox (reemplazo de ElevenLabs)
+
+Reemplaza el TTS de eadmin2 (`tts_chunks_sync` → ElevenLabs Flash) y el Piper-como-primary de novik133. **No es un módulo que actives a mano.** Default = local.
+
+```
+assistant.delta (Hermes)
+    → _clean_for_tts (secretos, markdown, think-blocks)
+    → RealtimeTTS.feed()          # parte ORACIONES (stream2sentence)
+    → ChatterboxTurboTTS.generate()  # un CLIP por oración, 24 kHz
+    ├ WS de voz: PCM int16 (on_audio_chunk, muted=True)
+    └ bus: hud.speak { text, voice, interrupt }  # visual, sin visemes nativos
+```
+
+**Repos verificados (2026-09-04)**
+
+| | resemble-ai/chatterbox | KoljaB/RealtimeTTS |
+|---|---|---|
+| Stars / license | 26 256 / **MIT** (código + pesos HF `license: mit`) | 4 023 / **MIT** (+ addendum: engines de terceros son aparte) |
+| Último push | 2026-07-21 (Nano). Release GitHub v0.1.2 **desfasado** | 2026-08-31 = **v0.8.5** |
+| API | `ChatterboxTurboTTS.from_pretrained(device="cuda").generate(text)` — **no hay server** | Extra `realtimetts[chatterbox]` → `ChatterboxEngine` |
+| Streaming nativo | **No.** Issue #528 abierta. `S3GenStreamer` no existe | Streamea **frases**; cada frase = un `generate()` completo |
+
+**Decisión**
+
+| Rol | Qué |
+|---|---|
+| Capa | RealtimeTTS `TextToAudioStream` |
+| Motor | Chatterbox **Turbo** (350M) o **Nano** (110M) en CUDA |
+| Fallback | Piper **oficial** (rhasspy/piper, MIT, binario). Solo si Chatterbox no carga |
+| Prohibido | ElevenLabs, OpenAI TTS, Edge, gTTS, Resemble cloud — **ni como fallback** |
+
+Por qué no Chatterbox solo: el engine oficial ya existe (`chatterbox_engine.py`), `feed(iterator)` encaja con `assistant.delta`, `muted` + `on_audio_chunk` = WS PCM, `stop()` = barge-in, lista de engines = Piper.
+
+**Dos voces:** Chatterbox es zero-shot por WAV ≥ 5 s. **No clonamos al usuario.** Dos archivos fijos: `voices/jarvis.wav`, `voices/companion.wav`. No hay pitch/speaker-id (Turbo ignora `exaggeration`/`cfg_weight`). Si falta companion.wav, se usa el mismo clone.
+
+**100% local**
+
+- Runtime: cero red. `HF_HUB_OFFLINE=1` + `model_path=/var/lib/jarvis/models/chatterbox-turbo`.
+- Primera vez: `huggingface-cli download ResembleAI/chatterbox-turbo` (~3–4 GB) + NLTK `punkt` + (opcional) Piper ONNX.
+- Perth watermark se aplica siempre en `generate()`; el checkpoint va en el wheel `resemble-perth` de PyPI (MIT). No es SaaS.
+- Repos HF no gated. No hay telemetry en el path `generate()` / `synthesize()`.
+
+**VRAM RTX 4060 8 GB (honesto)**
+
+| Pieza | GPU | Nota |
+|---|---|---|
+| Hermes 7–8B Q4 | 4.5–5.5 GB | **+ Turbo fp32 no cabe** |
+| Hermes ≤4B Q4, ctx ≤4k | 2.2–3.5 GB | ventana viable |
+| Chatterbox Turbo fp32 | pico 4–5.5 GB | solo si el LLM no está en GPU |
+| Chatterbox Nano fp32 | pico 2.5–4 GB | mejor compañero de un LLM chico |
+| YOLO26n | **CPU** | no pelear VRAM |
+| Piper | CPU | fallback |
+
+RealtimeTTS 0.8.5 **no pasa `nano=True`**. Hay que parchear 1 línea o instanciar Nano fuera. PyPI `chatterbox-tts` 0.1.7 = Turbo; Nano está en git HEAD (julio 2026).
+
+**Barge-in:** `stream.stop()` descarta el clip **después** de `generate()`, no cancela kernels PyTorch. El PCM ya encolado sí se corta. Latencia residual ≈ esa oración (fracción de segundo a ~2 s).
+
+**Sample rate:** Chatterbox = **24 kHz**. eadmin2 HUD espera **16 kHz**. Handshake `sample_rate` + resample si el cliente pide 16k. Si no, el kiosk suena acelerado.
+
+**Módulo en el monorepo:** `brain/src/jarvis_brain/voice/` — extra `[tts]`. No instalar `[all]` de RealtimeTTS (metería ElevenLabs).
+
 ---
 
 ## 5. Personalidad automática
@@ -650,7 +712,7 @@ No hay dos modelos. No hay toggle en el HUD. El clasificador vive en el cerebro,
 | Tono | Seco, neutro, breve | Más cálido, un toque de cercanía |
 | Longitud | 1–3 frases | 2–4 frases |
 | Tools | Iguales | Iguales |
-| TTS | voz A (Piper) | voz B opcional o mismos pesos + rate |
+| TTS | `voices/jarvis.wav` → Chatterbox | `voices/companion.wav` → Chatterbox |
 
 **Señales locales (sin segunda API cara)**
 
@@ -711,13 +773,16 @@ El monorepo ya es **Apache-2.0**. Una guía de pago sobre código Apache/MIT es 
 | ultralytics (YOLO26) | **AGPL-3.0** | **No embeber** en el binario JARVIS. Proceso aparte, como HA |
 | Shinobi (dentro de DeepCamera) | GPLv3 | No usar |
 | Three.js / hls.js | MIT / Apache-2.0 | Vendor pineado (no CDN `latest`) |
+| resemble-ai/chatterbox | MIT + pesos HF MIT | Motor TTS. Pin git/PyPI explícito; no release v0.1.2 |
+| KoljaB/RealtimeTTS | MIT | Capa. Extra `[chatterbox]` solamente |
+| rhasspy/piper | MIT (archived) | Fallback CPU. No copiar Piper de novik133 |
 
 ---
 
 ## 8. Fases (cuando apruebes — no ahora)
 
 1. **Bus + cerebro + Hermes** en Pop!_OS. Cablear `instructions`. systemd. `requirements.lock`. Smoke: texto → Hermes → texto.  
-2. **Voz local:** STT + Piper + openWakeWord. Phrase-map.  
+2. **Voz local:** STT + **RealtimeTTS/Chatterbox** + openWakeWord. Piper = fallback. Phrase-map. Extra `[tts]`.  
 3. **HUD reimplementado** + WS + gestos pinch/spread + `hud.ready`. Chromium kiosk.  
 4. **Vista `map`:** vendor SENTINEL + bridge `postMessage` + adaptador WebcamMap (extracto).  
 5. **HA adapter** + tool Hermes `ha_*` + discovery. Writes detrás de Howdy.  
@@ -745,7 +810,8 @@ El monorepo ya es **Apache-2.0**. Una guía de pago sobre código Apache/MIT es 
 12. DeepCamera no avisa solo: sin adaptador que alimente YOLO, no hay alertas. Aegis no es un daemon Linux.  
 13. ultralytics AGPL: si se linkea dentro de JARVIS, contagia. Proceso hijo obligatorio.  
 14. Spam YOLO 5 FPS sin debounce. Falsos positivos si la cam ve la calle (no hay zonas nativas).  
-15. Face rec legacy + Howdy = identidades contradictorias. Dejar face rec off.
+15. Face rec legacy + Howdy = identidades contradictorias. Dejar face rec off.  
+16. TTS: Chatterbox **no streamea audio**; frase = clip. Turbo + Hermes 7B en 8 GB = OOM. `transformers==5.2.0` pin. 24 kHz vs 16 kHz. RealtimeTTS 0.8.5 no carga Nano sin parche.
 
 ---
 
@@ -798,6 +864,14 @@ Ningún agente implementó código. Cada uno clonó/leyó y corrigió supuestos 
 - Eventos solo `surveillance.*`. No pisa `vision.*` ni `map.*`.  
 - AGPL de ultralytics → proceso aparte. Face rec apagado.
 
+### TTS (Agente 1 — voz)
+
+- Engine Chatterbox **existe** en RealtimeTTS 0.8.5 (`chatterbox_engine.py` + extra `[chatterbox]`).  
+- Chatterbox `generate()` = clip completo; no se vendió como stream de samples.  
+- Pesos HF `license: mit`. ElevenLabs fuera del fallback.  
+- `hud.speak` visual + PCM en WS aparte. Sin visemes nativos. 24 kHz vs 16 kHz documentado.  
+- VRAM: no se promete Turbo + Hermes 7B en 8 GB.
+
 ### Coordinador — QA cruzado
 
 Verifiqué yo (no solo los informes):
@@ -822,7 +896,9 @@ Verifiqué yo (no solo los informes):
 - Visión no corre en Pop!_OS hasta el portal.  
 - `instructions` de Hermes: NO VERIFICADO.  
 - Howdy 2.6.1 vs 3.0: el wrapper resuelve `COMPARE_PROCESS_PATH`.  
-- DeepCamera no emite `surveillance.alert`; el adaptador lo sintetiza.
+- DeepCamera no emite `surveillance.alert`; el adaptador lo sintetiza.  
+- TTS: `ChatterboxEngine` + extra `[chatterbox]` verificados. `LICENSE` MIT. No hay `howdy`-style API inventada: `generate()` es clip-por-oración.  
+- Primer código de producto: `brain/src/jarvis_brain/voice/` (capa local; pesos no se descargan en CI).
 
 ---
 
@@ -837,6 +913,5 @@ Verifiqué yo (no solo los informes):
 7. Persona automática `jarvis` / `companion` sin switch manual.  
 8. Howdy = capa automática del cerebro (`compare.py` + TTL). No módulo que actives a mano.  
 9. Agente 6 = YOLO26n + adaptador que **avisa solo**. Face rec / Aegis / VLM fuera de v1.  
-10. **No escribir código de producto** hasta que digas que sí.
-
-Cuando apruebes (o ajustes un punto), se implementa Fase 1.
+10. TTS default = RealtimeTTS + Chatterbox local. Piper = fallback. ElevenLabs **fuera**.  
+11. El resto del producto (bus, HUD, HA…) sigue esperando OK. El módulo `jarvis_brain.voice` ya está esbozado para no bloquear la voz.

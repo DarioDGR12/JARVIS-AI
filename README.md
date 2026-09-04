@@ -6,4 +6,6 @@ Asistente personal estilo Iron Man: BYOK + system prompt, orquestado en Pop!_OS.
 
 Lee [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md) antes de tocar nada. Ahí está qué repos se reutilizan, cuál es el cerebro, el contrato de eventos y la estructura del monorepo.
 
+Voz local (Chatterbox + RealtimeTTS, sin ElevenLabs): `brain/` — `pytest` en ese directorio.
+
 Licencia del repo: Apache-2.0.
