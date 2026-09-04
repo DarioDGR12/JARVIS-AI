@@ -1,6 +1,6 @@
 # Plan de integración JARVIS-AI
 
-**Estado:** Fase 1 del cerebro implementada (bus + Hermes + turno de texto). Siguientes fases no tocadas.  
+**Estado:** Fase 1 (bus + Hermes + texto) y Fase 2 (TTS local / Piper) implementadas y verificadas en runtime.  
 **Fecha:** 2026-09-04  
 **Repo:** [DarioDGR12/JARVIS-AI](https://github.com/DarioDGR12/JARVIS-AI) (licencia Apache-2.0)  
 **Plataforma objetivo:** Pop!_OS (COSMIC / GNOME, Linux, Wayland)  
@@ -848,7 +848,7 @@ El monorepo ya es **Apache-2.0**. Una guía de pago sobre código Apache/MIT es 
 ## 8. Fases
 
 1. **Bus + cerebro + Hermes** — **hecho** (turno de texto + `instructions` verificado). systemd/`requirements.lock` quedan para el empaquetado en Pop!_OS.  
-2. **Voz local:** STT + **RealtimeTTS/Chatterbox** + openWakeWord. Piper = fallback. Phrase-map. Extra `[tts]`.  
+2. **Voz local (TTS)** — **hecho** con Piper oficial en CPU (esta VM no tiene GPU). Chatterbox sigue siendo el default cuando hay pesos + CUDA. Extra `[tts]`. STT / wake word / phrase-map = siguiente recorte de voz.  
 3. **HUD reimplementado** + WS + gestos pinch/spread + `hud.ready`. Chromium kiosk.  
 4. **Vista `map`:** vendor SENTINEL + bridge `postMessage` + adaptador WebcamMap (extracto).  
 5. **HA adapter** + tool Hermes `ha_*` + discovery. Writes detrás de Howdy.  
@@ -972,8 +972,8 @@ Verifiqué yo (no solo los informes):
 - `instructions` de Hermes: **verificado en runtime** (Hermes 0.21.0). Overlay en session stream → system prompt. `API_SERVER_KEY` ≥ 16; `model.context_length` ≥ 64K.  
 - Howdy 2.6.1 vs 3.0: el wrapper resuelve `COMPARE_PROCESS_PATH`.  
 - DeepCamera no emite `surveillance.alert`; el adaptador lo sintetiza.  
-- TTS: `ChatterboxEngine` + extra `[chatterbox]` verificados. `LICENSE` MIT. No hay `howdy`-style API inventada: `generate()` es clip-por-oración.  
-- Primer código de producto: `brain/src/jarvis_brain/voice/` (capa local; pesos no se descargan en CI).  
+- TTS: `ChatterboxEngine` + extra `[chatterbox]` verificados en código. **Runtime en esta VM (sin GPU):** Piper oficial `es_ES-davefx-medium` → WAV 16 kHz, RMS ~4600. Chatterbox no se descargó (3–4 GB + CUDA).  
+- Primer código de producto: `brain/src/jarvis_brain/voice/` cableado al turno (`speak_reply` + `/ws/voice`).  
 - mem0: `LICENSE` Apache-2.0; `openai.py` default `gpt-5-mini`; `telemetry.py` `MEM0_TELEMETRY` default `"True"` → PostHog. `hermes.mdx` confirma additive + Platform vs OSS.
 
 ---
