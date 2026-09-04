@@ -239,13 +239,29 @@
     });
   }
 
+  function patchMetaCam() {
+    const el = document.getElementById("meta");
+    if (!el) return;
+    const hold = document.body.classList.contains("cam-hold");
+    const on = document.body.classList.contains("cam-on") || camHoldReleased;
+    const token = hold ? "cam hold" : (on ? "cam" : "sin cam");
+    el.textContent = el.textContent.replace(/ · [^·]+ · HUD /, " · " + token + " · HUD ");
+  }
+
   function setCamUi({ on, msg, empty }) {
     if (on !== undefined) document.body.classList.toggle("cam-on", !!on);
     const btnCam = document.getElementById("btn-cam");
     const btnHome = document.getElementById("btn-cam-home");
-    const live = document.body.classList.contains("cam-on");
-    if (btnCam) btnCam.textContent = live ? "Apagar cámara" : "Encender cámara";
-    if (btnHome) btnHome.textContent = live ? "Apagar" : "Encender";
+    const hold = document.body.classList.contains("cam-hold");
+    const live = document.body.classList.contains("cam-on") || camHoldReleased;
+    if (btnCam) {
+      btnCam.disabled = hold;
+      btnCam.textContent = hold ? "En hold" : (live ? "Apagar cámara" : "Encender cámara");
+    }
+    if (btnHome) {
+      btnHome.disabled = hold;
+      btnHome.textContent = hold ? "Hold" : (live ? "Apagar" : "Encender");
+    }
     if (msg !== undefined) {
       const el = document.getElementById("cam-msg");
       if (el) el.textContent = msg;
@@ -257,6 +273,7 @@
       });
     }
     setCamBadges();
+    patchMetaCam();
   }
 
   function camErrorText(err) {
@@ -421,6 +438,7 @@
   }
 
   async function toggleCamButton() {
+    if (document.body.classList.contains("cam-hold")) return;
     if (camStream || camHoldReleased) {
       stopCam();
       await publishCam({ enabled: false, hold: false, error: "", label: "" });

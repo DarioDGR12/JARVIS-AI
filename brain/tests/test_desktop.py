@@ -25,6 +25,7 @@ def test_repo_contains_tauri_app() -> None:
     assert "getUserMedia" in js
     assert "releaseForHowdy" in js
     assert "/api/hud/camera" in js
+    assert "patchMetaCam" in js
     globe = root / "desktop" / "ui" / "globe"
     assert (globe / "index.html").is_file()
     assert (globe / "globe.js").is_file()

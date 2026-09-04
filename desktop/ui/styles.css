@@ -187,7 +187,8 @@ button[type="submit"], #btn-back {
   color: var(--accent); cursor: pointer; letter-spacing: 0.08em;
   text-transform: uppercase; font-size: 12px; flex: 0 0 auto;
 }
-button:disabled { opacity: 0.4; cursor: wait; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button[type="submit"]:disabled { cursor: wait; }
 label.mute { color: var(--mute); font-size: 12px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
 
 #setup { flex-direction: column; align-items: stretch; }
