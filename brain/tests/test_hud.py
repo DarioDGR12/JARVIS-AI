@@ -55,12 +55,21 @@ def test_hud_state_machine() -> None:
     assert hud.operational == "thinking"
     hud.apply(new_event("persona.changed", {"to": "jarvis"}, source="brain"))
     assert hud.visual == "jarvis"
+    hud.apply(new_event("hud.camera", {"enabled": True, "label": "Integrated Camera", "device_id": "abc"}, source="hud"))
+    assert hud.camera_enabled is True
+    assert hud.camera_label == "Integrated Camera"
     hud.apply(new_event("auth.challenge", {"reason": "ha.command"}, source="brain"))
     assert hud.camera_hold is True
     assert hud.operational == "alert"
+    hud.apply(new_event("hud.camera", {"hold": True, "reason": "ha.command"}, source="brain"))
+    assert hud.camera_enabled is True
     hud.apply(new_event("auth.result", {"ok": True}, source="auth"))
     assert hud.camera_hold is False
     assert hud.operational == "standby"
+    hud.apply(new_event("hud.camera", {"enabled": False, "error": "permiso denegado", "label": ""}, source="hud"))
+    assert hud.camera_enabled is False
+    assert hud.camera_label is None
+    assert hud.camera_error == "permiso denegado"
     hud.apply(new_event("hud.ready", {"views": list(HUD_VIEWS)}, source="hud"))
     assert hud.ready is True
     snap = hud.snapshot()
@@ -88,6 +97,10 @@ def test_hud_api_view_click_ready() -> None:
     assert hud["ok"] is True
     assert hud["view"] == "system"
     assert hud["ready"] is True
+    cam = client.post("/api/hud/camera", json={"enabled": True, "label": "Fake Cam", "hold": False})
+    assert cam.status_code == 200
+    assert cam.json()["camera_enabled"] is True
+    assert cam.json()["camera_label"] == "Fake Cam"
 
 
 def test_chat_leaves_hud_standby() -> None:

@@ -1,6 +1,6 @@
 # Plan de integración JARVIS-AI
 
-**Estado:** Producto usable (bus + Hermes + TTS Piper + app Tauri + HUD + globo + visión de pantalla + webcam HUD). Howdy / HA / memoria / phrase-map están. Vigilancia YOLO y mem0 OSS **aún no**.  
+**Estado:** Producto usable (bus + Hermes + TTS Piper + app Tauri + HUD + globo + visión de pantalla + webcam HUD). La webcam es **una** `getUserMedia` del HUD; `hud.camera hold` detiene los tracks para que Howdy abra V4L2. Howdy / HA / memoria / phrase-map están. Vigilancia YOLO y mem0 OSS **aún no**.  
 **Fecha:** 2026-09-04  
 **Repo:** [DarioDGR12/JARVIS-AI](https://github.com/DarioDGR12/JARVIS-AI) (licencia Apache-2.0)  
 **Plataforma objetivo:** Pop!_OS (COSMIC / GNOME, Linux, Wayland)  
@@ -564,7 +564,7 @@ tool sensitive
 | `auth.challenge` | brain → wrapper | `{ reason: "ha.command"\|"fs.write"\|"shell"\|"vision.watch", tool, ttl_s }` |
 | `auth.result` | wrapper → brain | `{ ok, method: "howdy", confidence: null\|number, user, error, ttl_s, howdy_exit }` |
 | `auth.status` | wrapper → brain (boot + on change) | `{ enrolled, camera: "ir"\|"rgb"\|"missing", howdy_version }` |
-| `hud.camera` | brain → HUD | `{ hold: bool, reason: "auth.challenge" }` — **nuevo**. Pausa MediaPipe |
+| `hud.camera` | brain ↔ HUD | `{ hold, enabled, label, error, device_id, reason }` — hold **detiene** tracks (no `enabled=false`) para liberar V4L2. MediaPipe aún no. |
 
 `confidence` suele ser `null`: Howdy no emite JSON. `ok` = `howdy_exit == 0`.  
 `error` ∈ `{ none, no_model, timeout, too_dark, no_device, cancelled, abort }`.

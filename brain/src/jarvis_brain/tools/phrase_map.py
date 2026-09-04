@@ -51,11 +51,12 @@ _VISION_CAPTURE = re.compile(
     re.I,
 )
 _VISION_CAM_OFF = re.compile(
-    r"\b(cierra|apaga|quita|stop)\b.+\b(c[aá]mara|webcam|camera)\b",
+    r"\b(cierra|apaga|quita|stop|off)\b.+\b(c[aá]mara|webcam|camera)\b",
     re.I,
 )
 _VISION_CAM_ON = re.compile(
-    r"\b(abre|abrir|enciende|prende|show|open)\b.+\b(c[aá]mara|webcam|camera)\b"
+    r"\b(abre|abrir|enciende|prende|muestra|mu[eé]strame|mira|show|open|on)\b"
+    r".+\b(c[aá]mara|webcam|camera)\b"
     r"|\b(c[aá]mara|webcam)\b(\s+(por favor|please))?$",
     re.I,
 )

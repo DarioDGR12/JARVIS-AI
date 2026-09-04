@@ -44,6 +44,13 @@ def test_refuse_default_mem0() -> None:
 def test_phrase_vision() -> None:
     assert match_phrase("captura la pantalla").action == "vision.capture"
     assert match_phrase("abre la webcam").action == "vision.camera"
+    show = match_phrase("muéstrame la cámara")
+    assert show is not None and show.action == "vision.camera"
+    assert show.payload["enabled"] is True
+    look = match_phrase("mira la cámara")
+    assert look is not None and look.action == "vision.camera"
+    off = match_phrase("apaga la webcam")
+    assert off is not None and off.payload["enabled"] is False
 
 
 def test_phrase_map_globe() -> None:

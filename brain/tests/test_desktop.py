@@ -18,6 +18,13 @@ def test_repo_contains_tauri_app() -> None:
     assert 'id="cam-home"' in html
     assert 'id="cam-vision"' in html
     assert 'id="btn-capture"' in html
+    assert 'id="cam-device"' in html
+    assert 'id="btn-cam-home"' in html
+    assert "cam-hold-banner" in html
+    js = (root / "desktop" / "ui" / "app.js").read_text()
+    assert "getUserMedia" in js
+    assert "releaseForHowdy" in js
+    assert "/api/hud/camera" in js
     globe = root / "desktop" / "ui" / "globe"
     assert (globe / "index.html").is_file()
     assert (globe / "globe.js").is_file()

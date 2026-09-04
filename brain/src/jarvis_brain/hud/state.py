@@ -36,6 +36,9 @@ class HudState:
     view: str = "home"
     camera_hold: bool = False
     camera_enabled: bool = False
+    camera_label: str | None = None
+    camera_error: str | None = None
+    camera_device: str | None = None
     last_display: dict[str, Any] | None = None
     last_speak: dict[str, Any] | None = None
     toasts: list[dict[str, Any]] = field(default_factory=list)
@@ -48,6 +51,9 @@ class HudState:
             "view": self.view,
             "camera_hold": self.camera_hold,
             "camera_enabled": self.camera_enabled,
+            "camera_label": self.camera_label,
+            "camera_error": self.camera_error,
+            "camera_device": self.camera_device,
             "last_display": self.last_display,
             "last_speak": self.last_speak,
             "toasts": list(self.toasts[-8:]),
@@ -106,6 +112,17 @@ class HudState:
                 self.camera_hold = bool(payload.get("hold"))
             if "enabled" in payload:
                 self.camera_enabled = bool(payload.get("enabled"))
+                if not self.camera_enabled:
+                    self.camera_label = None
+            if "label" in payload:
+                label = str(payload.get("label") or "").strip()
+                self.camera_label = label or None
+            if "error" in payload:
+                err = str(payload.get("error") or "").strip()
+                self.camera_error = err or None
+            if "device_id" in payload:
+                device = str(payload.get("device_id") or "").strip()
+                self.camera_device = device or None
         elif event.type == "hud.ready":
             self.ready = True
         elif event.type == "brain.status":

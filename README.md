@@ -38,9 +38,12 @@ Sin key: `setup --demo`. Con key: el mismo producto, tu modelo. También se conf
 - Hermes Agent (`hermes gateway`).
 - Piper: `brain/scripts/setup_piper.sh`.
 
+## Qué hay
+
+HUD (inicio, chat, sistema, casa, mapa, visión, ajustes), globo SENTINEL, captura de pantalla, **webcam del HUD** (una sola `getUserMedia`; Howdy la suelta con `hold` para V4L2). Howdy / HA / phrase-map / stats / memoria local JSON.
+
 ## Qué no está (aún)
 
-HUD Iron Man, globo, visión de pantalla, vigilancia YOLO, mem0 OSS (Qdrant+Ollama).
-Howdy / HA / phrase-map / stats / memoria local JSON **sí están** en el cerebro y en la app.
+Vigilancia YOLO, mem0 OSS (Qdrant+Ollama), gestos MediaPipe, STT/wake.
 
 Licencia Apache-2.0. Plan largo: [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md).

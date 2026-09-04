@@ -25,7 +25,15 @@
   let busSocket = null;
   let mapFrame = null;
   let pendingMap = [];
+  const CAM_DEVICE_KEY = "jarvis.cam.device";
   let camStream = null;
+  let camBlocked = false;
+  let camMissing = false;
+  let camBusy = false;
+  let camHoldReleased = false;
+  let camStarting = false;
+  let lastCamDevice = "";
+  try { lastCamDevice = localStorage.getItem(CAM_DEVICE_KEY) || ""; } catch { lastCamDevice = ""; }
 
   function tauri() {
     return window.__TAURI__ || null;
@@ -215,78 +223,213 @@
   function bindCamVideos() {
     ["cam-home", "cam-vision"].forEach((id) => {
       const el = document.getElementById(id);
-      if (el) el.srcObject = camStream;
+      if (!el) return;
+      el.srcObject = camStream;
+      el.muted = true;
+      el.playsInline = true;
+      if (camStream) el.play().catch(() => {});
     });
   }
 
-  async function startCam() {
-    if (camStream) {
-      bindCamVideos();
-      document.body.classList.add("cam-on");
-      return true;
+  function setCamBadges() {
+    const hold = document.body.classList.contains("cam-hold");
+    const on = document.body.classList.contains("cam-on") || camHoldReleased;
+    document.querySelectorAll(".cam-badge").forEach((el) => {
+      el.textContent = hold ? "HOLD" : (on ? "LIVE" : "OFF");
+    });
+  }
+
+  function setCamUi({ on, msg, empty }) {
+    if (on !== undefined) document.body.classList.toggle("cam-on", !!on);
+    const btnCam = document.getElementById("btn-cam");
+    const btnHome = document.getElementById("btn-cam-home");
+    const live = document.body.classList.contains("cam-on");
+    if (btnCam) btnCam.textContent = live ? "Apagar cámara" : "Encender cámara";
+    if (btnHome) btnHome.textContent = live ? "Apagar" : "Encender";
+    if (msg !== undefined) {
+      const el = document.getElementById("cam-msg");
+      if (el) el.textContent = msg;
     }
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      document.getElementById("cam-msg").textContent = "getUserMedia no disponible";
-      return false;
-    }
-    try {
-      camStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 } },
-        audio: false,
+    if (empty !== undefined) {
+      ["cam-vision-empty", "cam-home-empty"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = empty;
       });
-      bindCamVideos();
-      document.body.classList.add("cam-on");
-      document.getElementById("btn-cam").textContent = "Apagar cámara";
-      document.getElementById("cam-msg").textContent = "cámara en vivo";
-      document.getElementById("cam-home-empty").textContent = "sin cámara";
-      return true;
-    } catch (err) {
-      document.body.classList.remove("cam-on");
-      document.getElementById("cam-vision-empty").textContent = "sin cámara / permiso";
-      document.getElementById("cam-home-empty").textContent = "sin cámara";
-      document.getElementById("cam-msg").textContent = String(err.message || err);
-      return false;
+    }
+    setCamBadges();
+  }
+
+  function camErrorText(err) {
+    const name = (err && err.name) || "";
+    if (name === "NotAllowedError" || name === "PermissionDeniedError") return "permiso denegado";
+    if (name === "NotFoundError" || name === "OverconstrainedError") return "no hay cámara en este equipo";
+    if (name === "NotReadableError" || name === "TrackStartError") return "cámara ocupada (Howdy u otra app)";
+    if (name === "SecurityError") return "contexto no seguro";
+    if (name === "AbortError") return "solicitud cancelada";
+    return String((err && err.message) || err || "error de cámara");
+  }
+
+  async function listCamDevices() {
+    const sel = document.getElementById("cam-device");
+    if (!sel || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    try {
+      const videos = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+      const prev = sel.value || lastCamDevice;
+      sel.replaceChildren();
+      const def = document.createElement("option");
+      def.value = "";
+      def.textContent = videos.length ? "Cámara por defecto" : "Sin dispositivos";
+      sel.appendChild(def);
+      videos.forEach((d, i) => {
+        const opt = document.createElement("option");
+        opt.value = d.deviceId;
+        opt.textContent = d.label || ("Cámara " + (i + 1));
+        sel.appendChild(opt);
+      });
+      if (prev && videos.some((d) => d.deviceId === prev)) sel.value = prev;
+      sel.hidden = videos.length <= 1;
+    } catch {
+      /* ignore */
     }
   }
 
-  function stopCam() {
+  async function startCam() {
+    if (camStarting) return !!camStream;
+    if (camStream) {
+      bindCamVideos();
+      setCamUi({ on: true, msg: "cámara en vivo", empty: "sin cámara" });
+      return true;
+    }
+    if (camBlocked || camMissing) return false;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      camMissing = true;
+      setCamUi({ on: false, msg: "getUserMedia no disponible", empty: "sin API de cámara" });
+      await publishCam({ enabled: false, error: "getUserMedia no disponible" });
+      return false;
+    }
+    camStarting = true;
+    const deviceId = (document.getElementById("cam-device") || {}).value || lastCamDevice;
+    const video = deviceId
+      ? { deviceId: { exact: deviceId }, width: { ideal: 640 } }
+      : { facingMode: "user", width: { ideal: 640 } };
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+      const track = camStream.getVideoTracks()[0];
+      const label = (track && track.label) || "webcam";
+      if (track && track.getSettings) {
+        const id = track.getSettings().deviceId;
+        if (id) {
+          lastCamDevice = id;
+          try { localStorage.setItem(CAM_DEVICE_KEY, id); } catch { /* ignore */ }
+        }
+      }
+      camBlocked = false;
+      camMissing = false;
+      camBusy = false;
+      bindCamVideos();
+      setCamUi({ on: true, msg: "cámara en vivo · " + label, empty: "sin cámara" });
+      await listCamDevices();
+      await publishCam({
+        enabled: true,
+        hold: false,
+        label,
+        device_id: lastCamDevice,
+        error: "",
+      });
+      return true;
+    } catch (err) {
+      const name = err && err.name;
+      const text = camErrorText(err);
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") camBlocked = true;
+      else if (name === "NotFoundError" || name === "OverconstrainedError") camMissing = true;
+      else if (name === "NotReadableError" || name === "TrackStartError") camBusy = true;
+      setCamUi({ on: false, msg: text, empty: text });
+      await publishCam({ enabled: false, error: text });
+      return false;
+    } finally {
+      camStarting = false;
+    }
+  }
+
+  function stopCam(opts) {
+    const silent = opts && opts.silent;
+    camHoldReleased = false;
     if (camStream) {
       camStream.getTracks().forEach((t) => t.stop());
       camStream = null;
     }
     bindCamVideos();
-    document.body.classList.remove("cam-on");
-    const btnCam = document.getElementById("btn-cam");
-    if (btnCam) btnCam.textContent = "Encender cámara";
-    const msg = document.getElementById("cam-msg");
-    if (msg) msg.textContent = "cámara apagada";
+    setCamUi({ on: false, msg: silent ? undefined : "cámara apagada", empty: "cámara apagada" });
+  }
+
+  function releaseForHowdy() {
+    document.body.classList.add("cam-hold");
+    if (camStream) {
+      camStream.getTracks().forEach((t) => t.stop());
+      camStream = null;
+      bindCamVideos();
+      document.body.classList.remove("cam-on");
+      camHoldReleased = true;
+    }
+    setCamUi({ msg: "Howdy · V4L2 libre" });
+  }
+
+  async function resumeAfterHowdy() {
+    document.body.classList.remove("cam-hold");
+    if (camHoldReleased) {
+      camHoldReleased = false;
+      camBusy = false;
+      await startCam();
+      return;
+    }
+    setCamBadges();
   }
 
   function applyCamFromHud(hud) {
     if (!hud) return;
-    if (hud.camera_hold !== undefined) {
-      document.body.classList.toggle("cam-hold", !!hud.camera_hold);
-      if (camStream) {
-        camStream.getVideoTracks().forEach((t) => {
-          t.enabled = !hud.camera_hold;
-        });
-      }
+    if (hud.camera_hold === true) {
+      releaseForHowdy();
+    } else if (hud.camera_hold === false && document.body.classList.contains("cam-hold")) {
+      resumeAfterHowdy();
     }
-    if (hud.camera_enabled === true) startCam();
-    if (hud.camera_enabled === false && camStream) stopCam();
+    if (hud.camera_enabled === true && !camStream && !camBlocked && !camMissing && !camHoldReleased) {
+      startCam();
+    }
+    if (hud.camera_enabled === false && (camStream || camHoldReleased)) {
+      stopCam();
+    }
   }
 
-  async function publishCam(enabled) {
-    const base = await brainUrl();
-    await fetch(base + "/api/bus", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: "hud.camera",
-        source: "hud",
-        payload: { enabled, hold: false },
-      }),
-    });
+  async function publishCam(payload) {
+    try {
+      const base = await brainUrl();
+      const r = await fetch(base + "/api/hud/camera", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (r.status === 404) {
+        await fetch(base + "/api/bus", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "hud.camera", source: "hud", payload }),
+        });
+      }
+    } catch (err) {
+      console.error("hud camera", err);
+    }
+  }
+
+  async function toggleCamButton() {
+    if (camStream || camHoldReleased) {
+      stopCam();
+      await publishCam({ enabled: false, hold: false, error: "", label: "" });
+      return;
+    }
+    camBlocked = false;
+    camMissing = false;
+    camBusy = false;
+    await startCam();
   }
 
   function showScreenPreview(b64) {
@@ -309,7 +452,10 @@
       const s = await fetch(base + "/api/vision").then((r) => r.json());
       const last = s.last || {};
       document.getElementById("vision-msg").textContent =
-        (last.text || "sin captura") + (s.watch ? " · WATCH" : "") + (s.error ? " · " + s.error : "");
+        (last.text || "sin captura")
+        + (s.session ? " · " + s.session : "")
+        + (s.watch ? " · WATCH" : "")
+        + (s.error ? " · " + s.error : "");
       document.getElementById("btn-watch").classList.toggle("on", !!s.watch);
       document.getElementById("btn-watch").textContent = s.watch ? "Parar vigilancia" : "Vigilancia pantalla";
       showScreenPreview(s.preview_jpeg_b64);
@@ -392,7 +538,7 @@
       const mode = p.mode === "byok" ? "BYOK " + (p.provider || "") : (p.mode || "demo");
       const auth = s.auth && s.auth.enrolled ? "howdy" : "sin howdy";
       const hud = s.hud || {};
-      const cam = hud.camera_enabled ? (hud.camera_hold ? "cam hold" : "cam") : "sin cam";
+      const cam = hud.camera_hold ? "cam hold" : (hud.camera_enabled ? (hud.camera_label || "cam") : "sin cam");
       meta.textContent = (s.ok ? "en línea" : "Hermes caído") + " · " + mode
         + (s.tts ? " · voz " + s.tts : " · sin voz") + " · " + auth
         + " · " + cam + " · HUD " + (hud.operational || "?");
@@ -488,8 +634,16 @@
       const a = s.auth || {};
       document.getElementById("auth-line").textContent =
         "Howdy: " + (a.enrolled ? "compare.py listo" : "no instalado") +
-        " · cámara " + (a.camera || "?") +
+        " · V4L2 " + (a.camera || "?") +
         (a.compare_path ? " · " + a.compare_path : "");
+      const hud = await fetch(base + "/api/hud").then((r) => r.json());
+      const camLine = document.getElementById("cam-line");
+      if (camLine) {
+        camLine.textContent = "Webcam HUD: "
+          + (hud.camera_enabled ? (hud.camera_label || "encendida") : "apagada")
+          + (hud.camera_hold ? " · HOLD Howdy (V4L2 libre)" : "")
+          + (hud.camera_error ? " · " + hud.camera_error : "");
+      }
     } catch (err) {
       document.getElementById("sys-stats").textContent = String(err);
     }
@@ -556,14 +710,25 @@
   document.getElementById("btn-back").addEventListener("click", () => showView("home"));
   document.getElementById("btn-capture").addEventListener("click", captureScreen);
   document.getElementById("btn-watch").addEventListener("click", toggleWatch);
-  document.getElementById("btn-cam").addEventListener("click", async () => {
-    if (camStream) {
-      stopCam();
-      await publishCam(false);
-      return;
+  document.getElementById("btn-cam").addEventListener("click", toggleCamButton);
+  document.getElementById("btn-cam-home").addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    toggleCamButton();
+  });
+  document.getElementById("cam-pip").addEventListener("click", (ev) => {
+    if (ev.target && ev.target.closest && ev.target.closest("button")) return;
+    showView("vision");
+  });
+  document.getElementById("cam-device").addEventListener("change", async (ev) => {
+    lastCamDevice = ev.target.value || "";
+    try { localStorage.setItem(CAM_DEVICE_KEY, lastCamDevice); } catch { /* ignore */ }
+    if (camStream || camHoldReleased) {
+      stopCam({ silent: true });
+      camBlocked = false;
+      camMissing = false;
+      camBusy = false;
+      await startCam();
     }
-    const ok = await startCam();
-    await publishCam(ok);
   });
   document.querySelectorAll("#nav button").forEach((b) => {
     b.addEventListener("click", () => showView(b.dataset.view));
@@ -579,6 +744,7 @@
   }
 
   wireWindow();
+  listCamDevices();
   markReady();
   refresh();
   setInterval(refresh, 8000);

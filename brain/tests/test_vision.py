@@ -82,12 +82,14 @@ def test_vision_api_and_watch_gate() -> None:
     watch = client.post("/api/vision/watch", json={"enabled": True})
     assert watch.status_code == 403
     assert watch.json()["auth"]["error"] == "no_model"
+    assert client.get("/api/hud").json()["camera_hold"] is False
 
 
 async def test_phrase_capture_and_camera() -> None:
     assert match_phrase("captura la pantalla").action == "vision.capture"
     assert match_phrase("abre la cámara").action == "vision.camera"
     assert match_phrase("abre la cámara").payload["enabled"] is True
+    assert match_phrase("muéstrame la cámara").action == "vision.camera"
     vis = VisionService(grab=lambda: GrabResult(png=_png((1, 2, 3)), backend="test", width=64, height=48))
     bus = EventBus()
     seen = collect_bus_events(bus)

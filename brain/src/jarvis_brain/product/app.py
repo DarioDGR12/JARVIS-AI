@@ -270,6 +270,12 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
         )
         return {"ok": True, **runtime.hud.snapshot()}
 
+    @app.post("/api/hud/camera")
+    async def hud_camera(body: dict | None = None) -> dict:
+        payload = dict(body or {})
+        await runtime.bus.publish(new_event("hud.camera", payload, source="hud"))
+        return {"ok": True, **runtime.hud.snapshot()}
+
     @app.get("/api/map")
     async def map_state() -> dict:
         return {"ok": True, **runtime.world.snapshot(), "feeds": runtime.world.visible}
@@ -366,7 +372,17 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
                     new_event("auth.challenge", {"reason": "vision.watch", "tool": "vision.watch"}, source="brain")
                 )
                 await runtime.bus.publish(
+                    new_event(
+                        "hud.camera",
+                        {"hold": True, "reason": "vision.watch"},
+                        source="brain",
+                    )
+                )
+                await runtime.bus.publish(
                     new_event("auth.result", gate.to_payload(), source="auth")
+                )
+                await runtime.bus.publish(
+                    new_event("hud.camera", {"hold": False, "reason": "vision.watch"}, source="auth")
                 )
                 return JSONResponse(
                     {"ok": False, "error": "auth required", "auth": gate.to_payload()},
@@ -402,9 +418,15 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
                 source="brain",
             )
         )
+        await runtime.bus.publish(
+            new_event("hud.camera", {"hold": True, "reason": reason}, source="brain")
+        )
         result = runtime.auth.verify(reason=reason, tool=tool, force=True)
         await runtime.bus.publish(
             new_event("auth.result", result.to_payload(), source="auth")
+        )
+        await runtime.bus.publish(
+            new_event("hud.camera", {"hold": False, "reason": reason}, source="auth")
         )
         return JSONResponse({"ok": result.ok, **result.to_payload()})
 
