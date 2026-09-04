@@ -88,12 +88,13 @@
   </section>
 
   <section id="map-view" hidden>
-    <h2>Mapa</h2>
-    <p class="lead">Vista SENTINEL. El siguiente agente monta el globo en un iframe same-origin. Aquí no se copia WebcamMap ni se abren 10k cámaras.</p>
-    <div class="placeholder">
-      <div class="hex"></div>
-      <p>Globo en espera · agente 3</p>
-    </div>
+    <div id="map-slot"></div>
+    <aside id="map-side">
+      <h2>Mapa</h2>
+      <p class="lead">Globo SENTINEL en iframe. Same-origin. Extracto corto, no 10k cámaras.</p>
+      <p id="map-status" class="msg-line">sin montar</p>
+      <p id="map-sel" class="msg-line"></p>
+    </aside>
   </section>
 
   <section id="vision-view" hidden>

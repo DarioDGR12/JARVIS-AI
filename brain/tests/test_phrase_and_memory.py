@@ -41,6 +41,14 @@ def test_refuse_default_mem0() -> None:
         refuse_default_mem0()
 
 
+def test_phrase_map_globe() -> None:
+    open_map = match_phrase("abre el mapa")
+    assert open_map is not None and open_map.action == "map.show"
+    focus = match_phrase("dónde está Tokio")
+    assert focus is not None and focus.action == "map.focus"
+    assert focus.payload["lat"] == 35.6762
+
+
 def test_persona_warm() -> None:
     assert choose_persona("gracias, buenos días") == "companion"
     assert choose_persona("estado del disco") == "jarvis"

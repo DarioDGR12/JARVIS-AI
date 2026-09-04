@@ -23,6 +23,8 @@
   const BRAIN = "http://127.0.0.1:8765";
   let currentView = "home";
   let busSocket = null;
+  let mapFrame = null;
+  let pendingMap = [];
 
   function tauri() {
     return window.__TAURI__ || null;
@@ -88,6 +90,8 @@
     });
     if (name === "system") loadSystem();
     if (name === "ha") loadHa();
+    if (name === "map") mountMap();
+    else unmountMap();
   }
 
   async function showView(name, opts) {
@@ -123,11 +127,82 @@
     if (ev.type === "hud.show_view" && ev.payload && ev.payload.view) {
       paintView(ev.payload.view);
     }
+    if (ev.type === "map.focus" || ev.type === "map.query" || ev.type === "map.show_feeds") {
+      sendToGlobe(ev);
+    }
     if (ev.type === "hud.set_mode" || ev.type === "hud.display" || ev.type === "hud.speak"
       || ev.type === "hud.highlight" || ev.type === "brain.status" || ev.type === "persona.changed"
       || ev.type === "auth.challenge" || ev.type === "auth.result" || ev.type === "hud.ready") {
       refreshHud();
     }
+  }
+
+  function mapStatus(text) {
+    const el = document.getElementById("map-status");
+    if (el) el.textContent = text;
+  }
+
+  function sendToGlobe(ev) {
+    if (!mapFrame || !mapFrame.contentWindow) {
+      pendingMap.push(ev);
+      return;
+    }
+    mapFrame.contentWindow.postMessage({ type: ev.type, payload: ev.payload || {} }, "*");
+  }
+
+  function onGlobeMessage(ev) {
+    const data = ev.data || {};
+    if (!data.type || String(data.type).indexOf("map.") !== 0) return;
+    if (data.type === "map.ready") {
+      mapStatus("listo · SENTINEL");
+      pendingMap.splice(0).forEach(sendToGlobe);
+    }
+    if (data.type === "map.selection") {
+      const p = data.payload || {};
+      const sel = document.getElementById("map-sel");
+      if (sel) sel.textContent = (p.feed_id || "") + " · " + (p.lat || "") + ", " + (p.lon || "");
+    }
+    if (data.type === "map.feed_ready") {
+      mapStatus((data.payload && data.payload.count) + " pines");
+    }
+    brainUrl().then((base) => {
+      fetch(base + "/api/bus", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: data.type,
+          source: "sentinel",
+          payload: data.payload || {},
+        }),
+      }).catch(() => {});
+    });
+  }
+
+  function mountMap() {
+    const slot = document.getElementById("map-slot");
+    if (!slot) return;
+    if (mapFrame && mapFrame.parentNode) return;
+    mapFrame = document.createElement("iframe");
+    mapFrame.src = "globe/index.html";
+    mapFrame.title = "SENTINEL";
+    mapFrame.setAttribute("allow", "");
+    slot.appendChild(mapFrame);
+    window.addEventListener("message", onGlobeMessage);
+    mapStatus("montando…");
+  }
+
+  function unmountMap() {
+    if (!mapFrame) return;
+    window.removeEventListener("message", onGlobeMessage);
+    if (mapFrame.contentWindow && mapFrame.contentWindow.JARVIS_GLOBE) {
+      try { mapFrame.contentWindow.JARVIS_GLOBE.destroy(); } catch { /* ignore */ }
+    }
+    mapFrame.remove();
+    mapFrame = null;
+    pendingMap = [];
+    mapStatus("sin montar");
+    const sel = document.getElementById("map-sel");
+    if (sel) sel.textContent = "";
   }
 
   async function refreshHud() {

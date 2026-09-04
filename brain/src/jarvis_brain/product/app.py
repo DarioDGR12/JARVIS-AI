@@ -17,6 +17,8 @@ from jarvis_brain.config import BrainConfig
 from jarvis_brain.ha.client import HomeAssistant, load_ha_config, write_ha_config
 from jarvis_brain.hermes.client import HermesClient, HermesError
 from jarvis_brain.hud.state import HUD_VIEWS, HudState
+from jarvis_brain.map.feeds import filter_feeds, query_feeds
+from jarvis_brain.map.state import MapState
 from jarvis_brain.memory.store import LocalMemory
 from jarvis_brain.product.providers import PROVIDERS
 from jarvis_brain.product.setup import apply_setup, load_product, public_status
@@ -44,6 +46,7 @@ class ProductRuntime:
         memory: LocalMemory | None = None,
         ha: HomeAssistant | None = None,
         hud: HudState | None = None,
+        world: MapState | None = None,
     ) -> None:
         self.cfg = cfg
         self.bus = bus
@@ -55,8 +58,10 @@ class ProductRuntime:
         self.memory = memory
         self.ha = ha or HomeAssistant()
         self.hud = hud or HudState()
+        self.world = world or MapState()
         self.lock = asyncio.Lock()
         self.bus.subscribe(self.hud.apply)
+        self.bus.subscribe(self.world.apply)
 
 
 def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
@@ -96,6 +101,7 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             "ui": "desktop",
             "auth": runtime.auth.status().to_payload(),
             "hud": runtime.hud.snapshot(),
+            "map": runtime.world.snapshot(),
             "ha": {"configured": runtime.ha.cfg.configured, "up": False},
             "bus": {
                 "clients": len(runtime.bus._clients),
@@ -227,6 +233,58 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             )
         )
         return {"ok": True, **runtime.hud.snapshot()}
+
+    @app.get("/api/map")
+    async def map_state() -> dict:
+        return {"ok": True, **runtime.world.snapshot(), "feeds": runtime.world.visible}
+
+    @app.post("/api/map/focus")
+    async def map_focus(body: dict) -> JSONResponse:
+        lat = (body or {}).get("lat")
+        lon = (body or {}).get("lon")
+        try:
+            lat_f = float(lat)
+            lon_f = float(lon)
+        except (TypeError, ValueError):
+            return JSONResponse({"ok": False, "error": "lat and lon required"}, status_code=400)
+        await runtime.bus.publish(
+            new_event(
+                "hud.show_view",
+                {"view": "map", "visible": True},
+                source="brain",
+            )
+        )
+        await runtime.bus.publish(
+            new_event(
+                "map.focus",
+                {"lat": lat_f, "lon": lon_f, "zoom": (body or {}).get("zoom")},
+                source="brain",
+            )
+        )
+        return JSONResponse({"ok": True, **runtime.world.snapshot()})
+
+    @app.post("/api/map/query")
+    async def map_query(body: dict) -> JSONResponse:
+        q = str((body or {}).get("q") or "")
+        hits = query_feeds(runtime.world.feeds, q)
+        await runtime.bus.publish(
+            new_event("hud.show_view", {"view": "map", "visible": True}, source="brain")
+        )
+        await runtime.bus.publish(new_event("map.query", {"q": q}, source="brain"))
+        return JSONResponse({"ok": True, "hits": hits, **runtime.world.snapshot()})
+
+    @app.post("/api/map/feeds")
+    async def map_feeds(body: dict) -> JSONResponse:
+        region = (body or {}).get("region")
+        tags = (body or {}).get("tags") or []
+        hits = filter_feeds(runtime.world.feeds, region=region, tags=tags)
+        await runtime.bus.publish(
+            new_event("hud.show_view", {"view": "map", "visible": True}, source="brain")
+        )
+        await runtime.bus.publish(
+            new_event("map.show_feeds", {"region": region, "tags": tags}, source="brain")
+        )
+        return JSONResponse({"ok": True, "feeds": hits, **runtime.world.snapshot()})
 
     @app.get("/api/system")
     async def system() -> dict:

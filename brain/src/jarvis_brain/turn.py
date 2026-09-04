@@ -86,6 +86,14 @@ async def run_text_turn(
                 source="brain",
             )
         )
+        if hit.action in {"map.show", "map.focus", "map.query"}:
+            await bus.publish(
+                new_event("hud.show_view", {"view": "map", "visible": True}, source="brain")
+            )
+        if hit.action == "map.focus":
+            await bus.publish(new_event("map.focus", hit.payload, source="brain"))
+        elif hit.action == "map.query":
+            await bus.publish(new_event("map.query", hit.payload, source="brain"))
         if tts and reply:
             await speak_reply(tts, bus, reply, voice=voice, session_id=session_id)
         await bus.publish(

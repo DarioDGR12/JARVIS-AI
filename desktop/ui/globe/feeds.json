@@ -1,0 +1,21 @@
+[
+  {"id": "madrid", "loc": "Madrid", "country": "ES", "lat": 40.4168, "lon": -3.7038, "region": "europe", "tags": ["city"]},
+  {"id": "barcelona", "loc": "Barcelona", "country": "ES", "lat": 41.3874, "lon": 2.1686, "region": "europe", "tags": ["city"]},
+  {"id": "london", "loc": "London", "country": "GB", "lat": 51.5074, "lon": -0.1278, "region": "europe", "tags": ["city"]},
+  {"id": "paris", "loc": "Paris", "country": "FR", "lat": 48.8566, "lon": 2.3522, "region": "europe", "tags": ["city"]},
+  {"id": "berlin", "loc": "Berlin", "country": "DE", "lat": 52.52, "lon": 13.405, "region": "europe", "tags": ["city"]},
+  {"id": "rome", "loc": "Rome", "country": "IT", "lat": 41.9028, "lon": 12.4964, "region": "europe", "tags": ["city"]},
+  {"id": "istanbul", "loc": "Istanbul", "country": "TR", "lat": 41.0082, "lon": 28.9784, "region": "europe", "tags": ["city"]},
+  {"id": "cairo", "loc": "Cairo", "country": "EG", "lat": 30.0444, "lon": 31.2357, "region": "africa", "tags": ["city"]},
+  {"id": "nairobi", "loc": "Nairobi", "country": "KE", "lat": -1.2921, "lon": 36.8219, "region": "africa", "tags": ["city"]},
+  {"id": "nyc", "loc": "New York", "country": "US", "lat": 40.7128, "lon": -74.006, "region": "americas", "tags": ["city"]},
+  {"id": "la", "loc": "Los Angeles", "country": "US", "lat": 34.0522, "lon": -118.2437, "region": "americas", "tags": ["city"]},
+  {"id": "mexico", "loc": "Mexico City", "country": "MX", "lat": 19.4326, "lon": -99.1332, "region": "americas", "tags": ["city"]},
+  {"id": "buenosaires", "loc": "Buenos Aires", "country": "AR", "lat": -34.6037, "lon": -58.3816, "region": "americas", "tags": ["city"]},
+  {"id": "saopaulo", "loc": "São Paulo", "country": "BR", "lat": -23.5505, "lon": -46.6333, "region": "americas", "tags": ["city"]},
+  {"id": "tokyo", "loc": "Tokyo", "country": "JP", "lat": 35.6762, "lon": 139.6503, "region": "asia", "tags": ["city"]},
+  {"id": "seoul", "loc": "Seoul", "country": "KR", "lat": 37.5665, "lon": 126.978, "region": "asia", "tags": ["city"]},
+  {"id": "singapore", "loc": "Singapore", "country": "SG", "lat": 1.3521, "lon": 103.8198, "region": "asia", "tags": ["city"]},
+  {"id": "sydney", "loc": "Sydney", "country": "AU", "lat": -33.8688, "lon": 151.2093, "region": "oceania", "tags": ["city"]},
+  {"id": "dubai", "loc": "Dubai", "country": "AE", "lat": 25.2048, "lon": 55.2708, "region": "asia", "tags": ["city"]}
+]

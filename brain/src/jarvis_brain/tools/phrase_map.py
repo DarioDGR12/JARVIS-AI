@@ -3,8 +3,9 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from jarvis_brain.map.feeds import resolve_place
 from jarvis_brain.tools.stats import format_stats, system_stats
 
 
@@ -13,6 +14,7 @@ class PhraseHit:
     action: str
     reply: str
     ran: bool
+    payload: dict = field(default_factory=dict)
 
 
 _VOLUME_UP = re.compile(
@@ -31,6 +33,16 @@ _LOCK = re.compile(
 )
 _STATS = re.compile(
     r"\b(c[oó]mo est[aá] el sistema|estado del sistema|system stats|carga del sistema)\b",
+    re.I,
+)
+_MAP_OPEN = re.compile(
+    r"\b(abre|abrir|muestra|mu[eé]strame|ens[eé][nñ]ame|show|open)\b.+"
+    r"\b(mapa|globo|map|globe|sentinel)\b"
+    r"|\b(mapa|globo)\b(\s+(por favor|please))?$",
+    re.I,
+)
+_MAP_FOCUS = re.compile(
+    r"\b(d[oó]nde est[aá]|enfoca|focus|mira)\b\s+(.+)$",
     re.I,
 )
 
@@ -70,6 +82,24 @@ def match_phrase(text: str) -> PhraseHit | None:
         return None
     if _STATS.search(raw):
         return PhraseHit("system.stats", format_stats(system_stats()), True)
+    if _MAP_OPEN.search(raw):
+        return PhraseHit("map.show", "Abriendo el globo.", True)
+    focus = _MAP_FOCUS.search(raw)
+    if focus:
+        place = resolve_place(focus.group(2))
+        if place:
+            return PhraseHit(
+                "map.focus",
+                f"Enfocando {place['loc']}.",
+                True,
+                {"lat": place["lat"], "lon": place["lon"], "zoom": 7, "id": place["id"]},
+            )
+        return PhraseHit(
+            "map.query",
+            f"Buscando {focus.group(2).strip()} en el globo.",
+            True,
+            {"q": focus.group(2).strip()},
+        )
     if _LOCK.search(raw):
         ok = _lock()
         return PhraseHit(
