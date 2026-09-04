@@ -22,6 +22,15 @@ body { display: flex; flex-direction: column; }
 }
 .brand { letter-spacing: 0.28em; font-size: 12px; color: var(--gold); }
 #meta { flex: 1; color: var(--mute); font-size: 12px; }
+#nav { display: flex; gap: 4px; }
+#nav button {
+  border: 1px solid var(--line); background: transparent; color: var(--mute);
+  font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 8px; cursor: pointer;
+}
+#nav button.on { color: var(--gold); border-color: var(--gold); }
+#sys-stats { background: var(--panel); border: 1px solid var(--line); padding: 12px; white-space: pre-wrap; color: var(--text); }
+#ha-states { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; overflow: auto; }
+.entity { display: flex; justify-content: space-between; gap: 8px; border: 1px solid var(--line); padding: 8px 10px; background: var(--panel); font-size: 13px; }
 .win { display: flex; gap: 4px; }
 .win button {
   width: 28px; height: 24px; border: 1px solid var(--line); background: var(--panel);
@@ -29,11 +38,11 @@ body { display: flex; flex-direction: column; }
 }
 .win button.close:hover { background: var(--danger); color: #fff; }
 
-#chat-view, #settings-view {
+#chat-view, #settings-view, #system-view, #ha-view {
   flex: 1; display: flex; flex-direction: column; min-height: 0;
   padding: 16px; max-width: 860px; width: 100%; margin: 0 auto;
 }
-#settings-view[hidden], #chat-view[hidden] { display: none; }
+#settings-view[hidden], #chat-view[hidden], #system-view[hidden], #ha-view[hidden] { display: none; }
 
 #log { flex: 1; overflow: auto; border: 1px solid var(--line); background: var(--panel);
   padding: 16px; display: flex; flex-direction: column; gap: 10px; }

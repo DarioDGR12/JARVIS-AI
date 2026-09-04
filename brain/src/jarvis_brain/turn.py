@@ -6,6 +6,9 @@ from jarvis_brain.bus.envelope import Event, new_event
 from jarvis_brain.bus.server import EventBus
 from jarvis_brain.config import BrainConfig
 from jarvis_brain.hermes.client import HermesClient, HermesError
+from jarvis_brain.memory.store import LocalMemory
+from jarvis_brain.persona.overlay import choose_persona, persona_overlay
+from jarvis_brain.tools.phrase_map import match_phrase
 from jarvis_brain.voice.tts import LocalTTS, PcmChunk
 
 
@@ -31,21 +34,54 @@ async def run_text_turn(
     session_id: str,
     overlay: str | None = None,
     tts: LocalTTS | None = None,
-    voice: str = "jarvis",
+    voice: str | None = None,
+    memory: LocalMemory | None = None,
 ) -> str:
-    """One text turn: publish on the bus, stream Hermes, optionally speak."""
-    instructions = overlay if overlay is not None else cfg.overlay
+    """One text turn: phrase-map, memory, Hermes, optional speak."""
+    persona = choose_persona(user_text)
+    voice = voice or persona
     await bus.publish(
         new_event(
             "user.text",
-            {"text": user_text, "session_id": session_id},
+            {"text": user_text, "session_id": session_id, "persona": persona},
             source="cli",
         )
     )
+    hit = match_phrase(user_text)
+    if hit:
+        await bus.publish(
+            new_event(
+                "tool.local",
+                {"action": hit.action, "ran": hit.ran, "session_id": session_id},
+                source="brain",
+            )
+        )
+        reply = hit.reply
+        await bus.publish(
+            new_event(
+                "assistant.text",
+                {"text": reply, "session_id": session_id, "via": "phrase-map"},
+                source="brain",
+            )
+        )
+        if tts and reply:
+            await speak_reply(tts, bus, reply, voice=voice, session_id=session_id)
+        return reply
+
+    facts = memory.overlay_block(user_text) if memory else ""
+    if overlay is not None:
+        instructions = overlay
+    else:
+        instructions = persona_overlay(persona)
+        if cfg.overlay and "JARVIS_PHASE1_OK" in cfg.overlay:
+            instructions = cfg.overlay
+        if facts:
+            instructions = f"{instructions}\n\n{facts}"
+
     await bus.publish(
         new_event(
             "brain.status",
-            {"state": "thinking", "session_id": session_id},
+            {"state": "thinking", "session_id": session_id, "persona": persona},
             source="brain",
         )
     )
@@ -79,6 +115,10 @@ async def run_text_turn(
             source="brain",
         )
     )
+    if memory and user_text:
+        memory.add(user_text, role="user")
+        if reply:
+            memory.add(reply, role="assistant")
     if tts and reply:
         await speak_reply(tts, bus, reply, voice=voice, session_id=session_id)
     await bus.publish(

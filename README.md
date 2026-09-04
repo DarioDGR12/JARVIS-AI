@@ -40,6 +40,7 @@ Sin key: `setup --demo`. Con key: el mismo producto, tu modelo. También se conf
 
 ## Qué no está (aún)
 
-HUD Iron Man, Howdy, Home Assistant, mem0, globo, visión, vigilancia.
+HUD Iron Man, globo, visión de pantalla, vigilancia YOLO, mem0 OSS (Qdrant+Ollama).
+Howdy / HA / phrase-map / stats / memoria local JSON **sí están** en el cerebro y en la app.
 
 Licencia Apache-2.0. Plan largo: [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md).

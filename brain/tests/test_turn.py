@@ -46,6 +46,22 @@ class _Engine:
         return
 
 
+class BoomHermes:
+    async def chat_stream(self, session_id, user_text, *, instructions):
+        raise AssertionError("phrase-map must not call Hermes")
+
+
+async def test_phrase_map_skips_hermes() -> None:
+    reply = await run_text_turn(
+        user_text="cómo está el sistema",
+        cfg=BrainConfig(),
+        hermes=BoomHermes(),  # type: ignore[arg-type]
+        bus=EventBus(),
+        session_id="s1",
+    )
+    assert reply.startswith("Sistema:")
+
+
 async def test_text_turn_speaks() -> None:
     bus = EventBus()
     seen = collect_bus_events(bus)

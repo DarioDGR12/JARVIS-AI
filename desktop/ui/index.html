@@ -10,6 +10,12 @@
   <header id="titlebar" data-tauri-drag-region>
     <div class="brand" data-tauri-drag-region>JARVIS</div>
     <div id="meta">conectando…</div>
+    <nav id="nav">
+      <button type="button" data-view="chat" class="on">Chat</button>
+      <button type="button" data-view="system">Sistema</button>
+      <button type="button" data-view="ha">Casa</button>
+      <button type="button" data-view="settings">Ajustes</button>
+    </nav>
     <div class="win">
       <button type="button" id="btn-settings" title="Ajustes">⚙</button>
       <button type="button" id="btn-min" title="Minimizar">–</button>
@@ -28,6 +34,24 @@
       <button type="submit">Enviar</button>
     </form>
   </main>
+
+  <section id="system-view" hidden>
+    <h2>Sistema</h2>
+    <pre id="sys-stats">…</pre>
+    <p class="lead" id="auth-line">Howdy: …</p>
+  </section>
+
+  <section id="ha-view" hidden>
+    <h2>Casa</h2>
+    <p class="lead">Home Assistant en la LAN. Los writes piden cara (Howdy). Token en ~/.config/jarvis/ha.env</p>
+    <form id="ha-setup">
+      <label>URL <input id="ha-url" placeholder="http://homeassistant.local:8123" /></label>
+      <label>Token <input id="ha-token" type="password" autocomplete="off" /></label>
+      <button type="submit">Guardar HA</button>
+    </form>
+    <p id="ha-msg" class="msg-line"></p>
+    <div id="ha-states"></div>
+  </section>
 
   <section id="settings-view" hidden>
     <h2>Ajustes</h2>

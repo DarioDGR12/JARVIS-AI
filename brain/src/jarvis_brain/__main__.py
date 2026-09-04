@@ -13,6 +13,7 @@ import uvicorn
 from jarvis_brain.bus.server import EventBus
 from jarvis_brain.config import BrainConfig
 from jarvis_brain.hermes.client import HermesClient, HermesError
+from jarvis_brain.memory.store import LocalMemory
 from jarvis_brain.product.app import ProductRuntime, attach_product_routes
 from jarvis_brain.product.setup import apply_setup, ensure_product_configured, load_product
 from jarvis_brain.product.start import (
@@ -196,7 +197,12 @@ async def _serve_http(
     session_id: str,
 ) -> None:
     runtime = ProductRuntime(
-        cfg=cfg, bus=bus, hermes=hermes, tts=tts, session_id=session_id
+        cfg=cfg,
+        bus=bus,
+        hermes=hermes,
+        tts=tts,
+        session_id=session_id,
+        memory=LocalMemory(),
     )
     app = attach_product_routes(bus.app(), runtime)
     config = uvicorn.Config(

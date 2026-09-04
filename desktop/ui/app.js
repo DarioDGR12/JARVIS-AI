@@ -5,8 +5,12 @@
   const q = document.getElementById("q");
   const mute = document.getElementById("mute");
   const btn = form.querySelector("button");
-  const chatView = document.getElementById("chat-view");
-  const settingsView = document.getElementById("settings-view");
+  const views = {
+    chat: document.getElementById("chat-view"),
+    settings: document.getElementById("settings-view"),
+    system: document.getElementById("system-view"),
+    ha: document.getElementById("ha-view"),
+  };
   const setupForm = document.getElementById("setup");
   const setupMsg = document.getElementById("setup-msg");
   const providerEl = document.getElementById("provider");
@@ -41,9 +45,15 @@
     log.scrollTop = log.scrollHeight;
   }
 
-  function showSettings(on) {
-    settingsView.hidden = !on;
-    chatView.hidden = on;
+  function showView(name) {
+    Object.entries(views).forEach(([key, el]) => {
+      if (el) el.hidden = key !== name;
+    });
+    document.querySelectorAll("#nav button").forEach((b) => {
+      b.classList.toggle("on", b.dataset.view === name);
+    });
+    if (name === "system") loadSystem();
+    if (name === "ha") loadHa();
   }
 
   function syncProviderFields() {
@@ -58,8 +68,9 @@
       const s = await fetch(base + "/api/status").then((r) => r.json());
       const p = s.product || {};
       const mode = p.mode === "byok" ? "BYOK " + (p.provider || "") : (p.mode || "demo");
+      const auth = s.auth && s.auth.enrolled ? "howdy" : "sin howdy";
       meta.textContent = (s.ok ? "en línea" : "Hermes caído") + " · " + mode
-        + (s.tts ? " · voz " + s.tts : " · sin voz");
+        + (s.tts ? " · voz " + s.tts : " · sin voz") + " · " + auth;
       if (p.provider) providerEl.value = p.provider;
       if (p.model) document.getElementById("model").value = p.model;
       if (p.base_url) document.getElementById("base-url").value = p.base_url;
@@ -125,9 +136,82 @@
     }
   });
 
+  async function loadSystem() {
+    try {
+      const base = await brainUrl();
+      const s = await fetch(base + "/api/system").then((r) => r.json());
+      document.getElementById("sys-stats").textContent = JSON.stringify(s.stats, null, 2);
+      const a = s.auth || {};
+      document.getElementById("auth-line").textContent =
+        "Howdy: " + (a.enrolled ? "compare.py listo" : "no instalado") +
+        " · cámara " + (a.camera || "?") +
+        (a.compare_path ? " · " + a.compare_path : "");
+    } catch (err) {
+      document.getElementById("sys-stats").textContent = String(err);
+    }
+  }
+
+  async function loadHa() {
+    const box = document.getElementById("ha-states");
+    box.textContent = "";
+    try {
+      const base = await brainUrl();
+      const s = await fetch(base + "/api/ha/states").then((r) => r.json());
+      if (!s.ok) {
+        document.getElementById("ha-msg").textContent = s.error || "HA no configurado";
+        return;
+      }
+      document.getElementById("ha-msg").textContent = (s.states || []).length + " entidades";
+      (s.states || []).forEach((ent) => {
+        const row = document.createElement("div");
+        row.className = "entity";
+        row.innerHTML = "<span>" + (ent.name || ent.entity_id) + "</span><span>" + (ent.state || "") + "</span>";
+        if (String(ent.entity_id || "").startsWith("light.") || String(ent.entity_id || "").startsWith("switch.")) {
+          const btn = document.createElement("button");
+          btn.textContent = "toggle";
+          btn.onclick = async () => {
+            const domain = ent.entity_id.split(".")[0];
+            const r = await fetch(base + "/api/ha/call", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ domain, service: "toggle", entity_id: ent.entity_id }),
+            });
+            const data = await r.json();
+            document.getElementById("ha-msg").textContent = data.ok ? "ok" : (data.error || "fail");
+            loadHa();
+          };
+          row.appendChild(btn);
+        }
+        box.appendChild(row);
+      });
+    } catch (err) {
+      document.getElementById("ha-msg").textContent = String(err);
+    }
+  }
+
+  document.getElementById("ha-setup").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const base = await brainUrl();
+    const r = await fetch(base + "/api/ha/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: document.getElementById("ha-url").value,
+        token: document.getElementById("ha-token").value,
+      }),
+    });
+    const data = await r.json();
+    document.getElementById("ha-msg").textContent = data.ok ? "HA guardado" : (data.error || "fail");
+    document.getElementById("ha-token").value = "";
+    if (data.ok) loadHa();
+  });
+
   providerEl.addEventListener("change", syncProviderFields);
-  document.getElementById("btn-settings").addEventListener("click", () => showSettings(true));
-  document.getElementById("btn-back").addEventListener("click", () => showSettings(false));
+  document.getElementById("btn-settings").addEventListener("click", () => showView("settings"));
+  document.getElementById("btn-back").addEventListener("click", () => showView("chat"));
+  document.querySelectorAll("#nav button").forEach((b) => {
+    b.addEventListener("click", () => showView(b.dataset.view));
+  });
 
   function wireWindow() {
     const api = tauri();

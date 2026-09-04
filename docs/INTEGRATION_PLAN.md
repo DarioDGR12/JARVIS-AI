@@ -1,6 +1,6 @@
 # Plan de integración JARVIS-AI
 
-**Estado:** Fase 1 (bus + Hermes + texto) y Fase 2 (TTS local / Piper) implementadas y verificadas en runtime.  
+**Estado:** Producto usable (bus + Hermes + TTS Piper + app Tauri). Howdy / HA / memoria local / phrase-map / stats están en el cerebro. HUD Iron Man, globo, visión, vigilancia y mem0 OSS **aún no**.  
 **Fecha:** 2026-09-04  
 **Repo:** [DarioDGR12/JARVIS-AI](https://github.com/DarioDGR12/JARVIS-AI) (licencia Apache-2.0)  
 **Plataforma objetivo:** Pop!_OS (COSMIC / GNOME, Linux, Wayland)  
@@ -760,7 +760,7 @@ olvido          → memory.forget { id | query }   # query = search + delete (me
 
 v3 extract = **ADD-only**: “ya no tomo café” no borra el hecho viejo solo. Forget explícito.
 
-**No implementar en este turno.** Extra `[memory]` cuando se apruebe.
+**Hecho (capa local, no mem0):** `LocalMemory` en `~/.config/jarvis/memory.jsonl`. `Memory()` default sigue **prohibido**. Extra `[memory]` (Qdrant + Ollama) cuando haya Ollama local.
 
 ---
 

@@ -10,12 +10,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from jarvis_brain.auth.howdy import AuthGate
+from jarvis_brain.bus.envelope import new_event
 from jarvis_brain.bus.server import EventBus
 from jarvis_brain.config import BrainConfig
+from jarvis_brain.ha.client import HomeAssistant, load_ha_config, write_ha_config
 from jarvis_brain.hermes.client import HermesClient, HermesError
+from jarvis_brain.memory.store import LocalMemory
 from jarvis_brain.product.providers import PROVIDERS
 from jarvis_brain.product.setup import apply_setup, load_product, public_status
 from jarvis_brain.product.start import ensure_stack
+from jarvis_brain.tools.stats import system_stats
 from jarvis_brain.turn import run_text_turn
 from jarvis_brain.voice.tts import LocalTTS
 
@@ -34,6 +39,9 @@ class ProductRuntime:
         tts: LocalTTS | None,
         session_id: str,
         brain_root: Path | None = None,
+        auth: AuthGate | None = None,
+        memory: LocalMemory | None = None,
+        ha: HomeAssistant | None = None,
     ) -> None:
         self.cfg = cfg
         self.bus = bus
@@ -41,6 +49,9 @@ class ProductRuntime:
         self.tts = tts
         self.session_id = session_id
         self.brain_root = brain_root or _brain_root()
+        self.auth = auth or AuthGate()
+        self.memory = memory
+        self.ha = ha or HomeAssistant()
         self.lock = asyncio.Lock()
 
 
@@ -79,6 +90,8 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             "session_id": runtime.session_id,
             "tts": runtime.tts.engine.name if runtime.tts and runtime.tts.engine else None,
             "ui": "desktop",
+            "auth": runtime.auth.status().to_payload(),
+            "ha": {"configured": runtime.ha.cfg.configured, "up": False},
             "bus": {
                 "clients": len(runtime.bus._clients),
                 "voice_clients": len(runtime.bus._voice_clients),
@@ -146,6 +159,7 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
                     bus=runtime.bus,
                     session_id=runtime.session_id,
                     tts=runtime.tts,
+                    memory=runtime.memory,
                 )
             except HermesError as exc:
                 return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
@@ -163,6 +177,99 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
                 "tts": runtime.tts.engine.name if runtime.tts and runtime.tts.engine else None,
             }
         )
+
+    @app.get("/api/system")
+    async def system() -> dict:
+        return {"ok": True, "stats": system_stats(), "auth": runtime.auth.status().to_payload()}
+
+    @app.get("/api/auth")
+    async def auth_status() -> dict:
+        return {"ok": True, **runtime.auth.status().to_payload(), "cached": runtime.auth.cached()}
+
+    @app.post("/api/auth/challenge")
+    async def auth_challenge(body: dict) -> JSONResponse:
+        tool = str((body or {}).get("tool") or "shell")
+        reason = str((body or {}).get("reason") or tool)
+        await runtime.bus.publish(
+            new_event(
+                "auth.challenge",
+                {"reason": reason, "tool": tool, "ttl_s": runtime.auth.ttl_s},
+                source="brain",
+            )
+        )
+        result = runtime.auth.verify(reason=reason, tool=tool, force=True)
+        await runtime.bus.publish(
+            new_event("auth.result", result.to_payload(), source="auth")
+        )
+        return JSONResponse({"ok": result.ok, **result.to_payload()})
+
+    @app.get("/api/ha/states")
+    async def ha_states() -> JSONResponse:
+        if not runtime.ha.cfg.configured:
+            return JSONResponse(
+                {"ok": False, "error": "HA not configured", "states": []},
+                status_code=200,
+            )
+        try:
+            states = runtime.ha.states()
+        except Exception as exc:
+            return JSONResponse({"ok": False, "error": str(exc), "states": []}, status_code=502)
+        slim = [
+            {
+                "entity_id": s.get("entity_id"),
+                "state": s.get("state"),
+                "name": (s.get("attributes") or {}).get("friendly_name"),
+            }
+            for s in states
+            if str(s.get("entity_id") or "").split(".", 1)[0]
+            in {"light", "switch", "binary_sensor", "sensor", "lock", "climate"}
+        ]
+        return JSONResponse({"ok": True, "states": slim[:80]})
+
+    @app.post("/api/ha/call")
+    async def ha_call(body: dict) -> JSONResponse:
+        domain = str((body or {}).get("domain") or "")
+        service = str((body or {}).get("service") or "")
+        entity_id = (body or {}).get("entity_id") or None
+        if not domain or not service:
+            return JSONResponse({"ok": False, "error": "domain and service required"}, status_code=400)
+        gate = runtime.auth.require("ha.command", reason="ha.command")
+        if not gate.ok:
+            return JSONResponse(
+                {"ok": False, "error": "auth required", "auth": gate.to_payload()},
+                status_code=403,
+            )
+        try:
+            result = runtime.ha.call(domain, service, entity_id=entity_id)
+        except Exception as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+        return JSONResponse({"ok": True, **result})
+
+    @app.post("/api/ha/setup")
+    async def ha_setup(body: dict) -> JSONResponse:
+        url = str((body or {}).get("url") or "")
+        token = str((body or {}).get("token") or "")
+        if not url or not token:
+            return JSONResponse({"ok": False, "error": "url and token required"}, status_code=400)
+        write_ha_config(url, token)
+        runtime.ha = HomeAssistant(load_ha_config())
+        return JSONResponse({"ok": True, "configured": runtime.ha.cfg.configured})
+
+    @app.get("/api/memory")
+    async def memory_search(q: str = "", k: int = 5) -> dict:
+        if runtime.memory is None:
+            return {"ok": True, "items": []}
+        return {"ok": True, "items": runtime.memory.search(q, k=k)}
+
+    @app.post("/api/memory/forget")
+    async def memory_forget(body: dict) -> dict:
+        if runtime.memory is None:
+            return {"ok": True, "removed": 0}
+        removed = runtime.memory.forget(
+            query=(body or {}).get("query"),
+            id=(body or {}).get("id"),
+        )
+        return {"ok": True, "removed": removed}
 
     return app
 
