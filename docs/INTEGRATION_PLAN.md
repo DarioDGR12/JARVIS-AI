@@ -26,6 +26,7 @@ Este documento es el entregable de seis agentes especializados (más Howdy como 
 | Auth facial (Howdy) | **Capa del cerebro**, no módulo aparte. Howdy es binario del SO (`compare.py`). Antes de HA write / fs write / shell: `auth.challenge` → cara → cache TTL 5 min. Sin switch manual |
 | Vigilancia (Agente 6) | Adaptador + **YOLO26n headless** (skill de DeepCamera). Corre en paralelo, **avisa solo**. Face rec / Aegis / VLM / Shinobi **apagados**. Eventos `surveillance.*` |
 | TTS (voz) | **RealtimeTTS 0.8.5 + Chatterbox Turbo/Nano** (MIT, local, GPU). Piper MIT = fallback CPU. **ElevenLabs fuera** (ni default ni fallback automático) |
+| Memoria | **Complementar** Hermes (SOUL / MEMORY.md / sesión) con **mem0 OSS** self-hosted (Apache-2.0). novik133 N-mensajes = descartar. **No Mem0 Cloud.** `Memory()` a pelo = OpenAI + PostHog — prohibido |
 
 Si esto te encaja, el siguiente paso (cuando lo apruebes) es Fase 1: bus de eventos + cerebro + Hermes, sin HUD todavía.
 
@@ -260,6 +261,7 @@ JARVIS-AI/                          # Apache-2.0 (ya en el repo)
 │   │   ├── hermes/                 # cliente Sessions API
 │   │   ├── persona/                # clasificador + overlays
 │   │   ├── voice/                  # STT / TTS / wake
+│   │   ├── memory/                 # mem0 OSS wrapper (Qdrant + Ollama local)
 │   │   ├── auth/                   # wrapper Howdy (spawn compare.py + cache TTL)
 │   │   └── tools/                  # plugins Hermes: hud, map, ha, vision
 │   └── pyproject.toml
@@ -328,7 +330,7 @@ Los agentes propusieron eventos. El coordinador **unificó** nombres y payloads.
   "v": 1,
   "id": "01J7QK3...",
   "ts": "2026-09-04T05:35:00.123Z",
-  "source": "brain|hud|map|vision|ha|voice|system|auth|surveillance",
+  "source": "brain|hud|map|vision|ha|voice|system|auth|surveillance|memory",
   "type": "hud.display",
   "corr_id": null,
   "payload": {}
@@ -697,6 +699,67 @@ RealtimeTTS 0.8.5 **no pasa `nano=True`**. Hay que parchear 1 línea o instancia
 
 **Módulo en el monorepo:** `brain/src/jarvis_brain/voice/` — extra `[tts]`. No instalar `[all]` de RealtimeTTS (metería ElevenLabs).
 
+### 4.11 Memoria — mem0 OSS complementa Hermes (no lo reemplaza)
+
+novik133 guarda N pares en RAM y se pierde al reiniciar. Hermes guarda sesión + `SOUL.md` / `MEMORY.md` / `USER.md` (markdown, `session_search` textual). Eso no es retrieve semántico de hechos.
+
+**Repo:** [mem0ai/mem0](https://github.com/mem0ai/mem0) — Apache-2.0, 64k★, push 2026-09-03, Python SDK `v2.0.20`. Hay **dos productos**: lib OSS + Platform Cloud. Docs oficiales de Hermes: *“works additively with the built-in system”* (`docs/integrations/hermes.mdx`).
+
+**Decisión: complementar, no reemplazar.**
+
+| Capa | Dueño | Rol |
+|---|---|---|
+| Identidad | Hermes `SOUL.md` | Quién es. **No reescribir.** |
+| Sesión + overlays | Hermes `session_key` (`jarvis:user:main`) | Transcript. Una sesión para jarvis y companion |
+| Notas del agente | `MEMORY.md` / `USER.md` | Markdown que el agente edita |
+| Hechos de largo plazo | **mem0 OSS** (capa del cerebro) | Extract + embeddings + search semántico |
+| Ventana N de novik133 | — | No portar |
+
+Un solo writer: el cerebro. **No** activar `hermes memory setup mem0` a la vez (doble `add()`). Graph / Dream / decay = Platform only (sacados de OSS en v3). `agent_id` es un filtro, no un framework multi-agente — **no** partir por personalidad.
+
+**`Memory()` sin config NO es local.** Código verificado:
+
+- LLM default: OpenAI `gpt-5-mini` (`mem0/llms/openai.py`)
+- Embeddings default: `text-embedding-3-small` 1536-d
+- Vector: Qdrant path `/tmp/qdrant` (efímero)
+- Telemetría **ON** → PostHog US (`MEM0_TELEMETRY` default `"True"`)
+
+**Path 100% local (backends reales en la factory):**
+
+| Pieza | Provider | Config |
+|---|---|---|
+| Vector | `qdrant` (dep core) | `path=~/.jarvis/mem0/qdrant`, `on_disk=true`, **`embedding_model_dims: 768`** |
+| Embedder | `ollama` `nomic-embed-text` | 768 dims (el default del código Ollama dice 512 — **forzar 768**) |
+| Extractor | `ollama` `llama3.1:8b` | **No** el default del código (`llama3.1:70b`). No Hermes BYOK (los hechos no deben salir a la nube) |
+| Telemetría | off | `MEM0_TELEMETRY=false` |
+
+Alternativa embedder: `huggingface` + MiniLM (sentence-transformers). Chroma/FAISS existen; Hermes OSS wizard solo ofrece qdrant/pgvector.
+
+**Flujo (capa automática, sin switch):**
+
+```
+inicio de turno → memory.search { q, k }
+               → memory.hit → bloque compacto en overlay Hermes
+               → SOUL.md intacto
+fin de turno    → memory.add { messages }  (background; no bloquear Chatterbox)
+olvido          → memory.forget { id | query }   # query = search + delete (mem0 no tiene forget-by-query)
+```
+
+`user_id` = el mismo `session_key`. Companion y JARVIS leen/escriben **la misma** store.
+
+**Eventos (source: `memory`)**
+
+| type | dirección | payload |
+|---|---|---|
+| `memory.search` | brain → mem | `{ q, k? }` |
+| `memory.hit` | mem → brain | `{ items: [{ text, score, id? }] }` |
+| `memory.add` | brain → mem | `{ messages: [{role, content}] }` |
+| `memory.forget` | brain → mem | `{ query? , id? }` |
+
+v3 extract = **ADD-only**: “ya no tomo café” no borra el hecho viejo solo. Forget explícito.
+
+**No implementar en este turno.** Extra `[memory]` cuando se apruebe.
+
 ---
 
 ## 5. Personalidad automática
@@ -776,6 +839,7 @@ El monorepo ya es **Apache-2.0**. Una guía de pago sobre código Apache/MIT es 
 | resemble-ai/chatterbox | MIT + pesos HF MIT | Motor TTS. Pin git/PyPI explícito; no release v0.1.2 |
 | KoljaB/RealtimeTTS | MIT | Capa. Extra `[chatterbox]` solamente |
 | rhasspy/piper | MIT (archived) | Fallback CPU. No copiar Piper de novik133 |
+| mem0ai/mem0 | Apache-2.0 | Lib OSS. **No** Platform Cloud. Telemetría off |
 
 ---
 
@@ -790,7 +854,8 @@ El monorepo ya es **Apache-2.0**. Una guía de pago sobre código Apache/MIT es 
 7. **Visión:** portal Screenshot + OCR opt-in + fingerprint. Watch off por default (sensitive).  
 8. **Agente 6:** YOLO26n + 1 cámara puerta + debounce + `surveillance.alert`. Sin face rec / VLM.  
 9. **PersonaClassifier** + overlays + `persona.changed`.  
-10. Docs de la guía (setup Pop!_OS, BYOK, HA, Howdy, cámaras, avisos legales + AGPL).
+10. **mem0 OSS** local (Qdrant + Ollama). Un `user_id`. Telemetría off. No Cloud.  
+11. Docs de la guía (setup Pop!_OS, BYOK, HA, Howdy, cámaras, avisos legales + AGPL).
 
 ---
 
@@ -811,7 +876,8 @@ El monorepo ya es **Apache-2.0**. Una guía de pago sobre código Apache/MIT es 
 13. ultralytics AGPL: si se linkea dentro de JARVIS, contagia. Proceso hijo obligatorio.  
 14. Spam YOLO 5 FPS sin debounce. Falsos positivos si la cam ve la calle (no hay zonas nativas).  
 15. Face rec legacy + Howdy = identidades contradictorias. Dejar face rec off.  
-16. TTS: Chatterbox **no streamea audio**; frase = clip. Turbo + Hermes 7B en 8 GB = OOM. `transformers==5.2.0` pin. 24 kHz vs 16 kHz. RealtimeTTS 0.8.5 no carga Nano sin parche.
+16. TTS: Chatterbox **no streamea audio**; frase = clip. Turbo + Hermes 7B en 8 GB = OOM. `transformers==5.2.0` pin. 24 kHz vs 16 kHz. RealtimeTTS 0.8.5 no carga Nano sin parche.  
+17. mem0: `Memory()` default = OpenAI + PostHog + `/tmp/qdrant`. Dims 1536 vs 768. Ollama código default 70b. ADD-only v3. Doble writer si se enciende el provider Hermes.
 
 ---
 
@@ -872,6 +938,13 @@ Ningún agente implementó código. Cada uno clonó/leyó y corrigió supuestos 
 - `hud.speak` visual + PCM en WS aparte. Sin visemes nativos. 24 kHz vs 16 kHz documentado.  
 - VRAM: no se promete Turbo + Hermes 7B en 8 GB.
 
+### Memoria (Agente 1 — mem0)
+
+- Apache-2.0 + docs Hermes “additive”. Complementa, no reemplaza.  
+- Default `Memory()` **no** es local (OpenAI + telemetry). Path local = Qdrant persistente + Ollama.  
+- Graph OSS = no (v3). `forget(query)` es compuesto. Una store, no `agent_id` por persona.  
+- **Sin código** en este turno.
+
 ### Coordinador — QA cruzado
 
 Verifiqué yo (no solo los informes):
@@ -898,7 +971,8 @@ Verifiqué yo (no solo los informes):
 - Howdy 2.6.1 vs 3.0: el wrapper resuelve `COMPARE_PROCESS_PATH`.  
 - DeepCamera no emite `surveillance.alert`; el adaptador lo sintetiza.  
 - TTS: `ChatterboxEngine` + extra `[chatterbox]` verificados. `LICENSE` MIT. No hay `howdy`-style API inventada: `generate()` es clip-por-oración.  
-- Primer código de producto: `brain/src/jarvis_brain/voice/` (capa local; pesos no se descargan en CI).
+- Primer código de producto: `brain/src/jarvis_brain/voice/` (capa local; pesos no se descargan en CI).  
+- mem0: `LICENSE` Apache-2.0; `openai.py` default `gpt-5-mini`; `telemetry.py` `MEM0_TELEMETRY` default `"True"` → PostHog. `hermes.mdx` confirma additive + Platform vs OSS.
 
 ---
 
@@ -914,4 +988,5 @@ Verifiqué yo (no solo los informes):
 8. Howdy = capa automática del cerebro (`compare.py` + TTL). No módulo que actives a mano.  
 9. Agente 6 = YOLO26n + adaptador que **avisa solo**. Face rec / Aegis / VLM fuera de v1.  
 10. TTS default = RealtimeTTS + Chatterbox local. Piper = fallback. ElevenLabs **fuera**.  
-11. El resto del producto (bus, HUD, HA…) sigue esperando OK. El módulo `jarvis_brain.voice` ya está esbozado para no bloquear la voz.
+11. Memoria = mem0 OSS **complementa** Hermes. Local (Qdrant + Ollama). No Cloud. No código hasta que apruebes esta capa.  
+12. El resto del producto (bus, HUD, HA…) sigue esperando OK. El módulo `jarvis_brain.voice` ya está esbozado.
