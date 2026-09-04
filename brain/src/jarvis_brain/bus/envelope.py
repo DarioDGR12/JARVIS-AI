@@ -32,6 +32,29 @@ class Event:
         }
 
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Event:
+        if not isinstance(data, dict) or "type" not in data:
+            raise ValueError("event must be an object with a type")
+        return cls(
+            type=str(data["type"]),
+            payload=dict(data.get("payload") or {}),
+            source=str(data.get("source") or "unknown"),
+            v=int(data.get("v") or 1),
+            id=str(data.get("id") or uuid4().hex),
+            ts=str(data.get("ts") or _now_iso()),
+            corr_id=data.get("corr_id"),
+        )
+
+
+def _now_iso() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+
+
 def new_event(
     type: str,
     payload: dict[str, Any],
