@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+
 from jarvis_brain.bus.envelope import Event, new_event
 from jarvis_brain.bus.server import EventBus
 from jarvis_brain.config import BrainConfig
 from jarvis_brain.hermes.client import HermesClient, HermesError
+from jarvis_brain.voice.tts import LocalTTS, PcmChunk
 
 
 def _delta_text(event_name: str, data: dict) -> str:
@@ -27,8 +30,10 @@ async def run_text_turn(
     bus: EventBus,
     session_id: str,
     overlay: str | None = None,
+    tts: LocalTTS | None = None,
+    voice: str = "jarvis",
 ) -> str:
-    """One text turn: publish on the bus, stream Hermes, return full reply."""
+    """One text turn: publish on the bus, stream Hermes, optionally speak."""
     instructions = overlay if overlay is not None else cfg.overlay
     await bus.publish(
         new_event(
@@ -74,6 +79,8 @@ async def run_text_turn(
             source="brain",
         )
     )
+    if tts and reply:
+        await speak_reply(tts, bus, reply, voice=voice, session_id=session_id)
     await bus.publish(
         new_event(
             "brain.status",
@@ -82,6 +89,37 @@ async def run_text_turn(
         )
     )
     return reply
+
+
+async def speak_reply(
+    tts: LocalTTS,
+    bus: EventBus,
+    text: str,
+    *,
+    voice: str = "jarvis",
+    session_id: str | None = None,
+) -> PcmChunk:
+    """Synthesize locally and fan out hud.speak + PCM on /ws/voice."""
+    events: list[Event] = []
+    previous = tts.on_event
+
+    def _capture(event: Event) -> None:
+        events.append(event)
+        if previous:
+            previous(event)
+
+    tts.on_event = _capture
+    try:
+        chunk = await asyncio.to_thread(tts.speak_text, text, voice=voice)
+    finally:
+        tts.on_event = previous
+    for event in events:
+        if session_id is not None:
+            event.payload["session_id"] = session_id
+        await bus.publish(event)
+    if chunk.pcm:
+        await bus.send_pcm(chunk.pcm, chunk.sample_rate)
+    return chunk
 
 
 def collect_bus_events(bus: EventBus) -> list[Event]:

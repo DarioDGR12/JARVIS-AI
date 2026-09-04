@@ -1,6 +1,6 @@
 # jarvis-brain
 
-Cerebro del monorepo. Fase 1: **bus de eventos + Hermes + turno de texto**.
+Cerebro del monorepo. Fase 1: bus + Hermes + turno de texto. Fase 2: **TTS local**.
 
 ## Turno de texto (Fase 1)
 
@@ -35,8 +35,17 @@ bash scripts/qa_phase1.sh
 Éxito = la respuesta contiene `JARVIS_PHASE1_OK` y el mock LLM reporta `overlay_seen: true`.
 
 Bus: `ws://0.0.0.0:8765/ws/bus` y `POST /api/bus` (host/puerto vía `JARVIS_BUS_HOST` / `PORT` / `JARVIS_BUS_PORT`).
+Voz PCM: `ws://…/ws/voice` (s16le mono 16 kHz, canal aparte).
 
-## TTS (siguiente fase — no usar ahora)
+## TTS local (Fase 2)
 
-Default: RealtimeTTS + Chatterbox (GPU). Fallback: Piper.  
+Default: Chatterbox (GPU) si está instalado. Fallback real: **Piper oficial** (CPU).  
 **ElevenLabs / OpenAI TTS / Edge no se instalan ni se usan como fallback.**
+
+```bash
+bash scripts/setup_piper.sh
+export JARVIS_TTS_PROVIDER=piper
+python3 -m jarvis_brain speak -m "Sistemas en línea." --wav /tmp/jarvis.wav
+python3 -m jarvis_brain chat --wav /tmp/jarvis-turn.wav -m "hola"
+bash scripts/qa_phase2.sh
+```

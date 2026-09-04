@@ -23,6 +23,35 @@ def test_health_and_http_publish() -> None:
     assert "user.text" in seen
 
 
+def test_voice_ws_handshake() -> None:
+    bus = EventBus()
+    client = TestClient(bus.app())
+    with client.websocket_connect("/ws/voice") as ws:
+        ready = ws.receive_json()
+        assert ready["type"] == "voice.ready"
+        assert ready["format"] == "s16le"
+        assert ready["channels"] == 1
+    health = client.get("/health").json()
+    assert health["ok"] is True
+    assert "voice_clients" in health
+
+
+async def test_send_pcm_to_voice_clients() -> None:
+    class FakeWS:
+        def __init__(self) -> None:
+            self.frames: list[bytes] = []
+
+        async def send_bytes(self, data: bytes) -> None:
+            self.frames.append(data)
+
+    bus = EventBus()
+    fake = FakeWS()
+    bus._voice_clients.add(fake)  # type: ignore[arg-type]
+    await bus.send_pcm(b"\x01\x00\x02\x00", 16000)
+    assert fake.frames == [b"\x01\x00\x02\x00"]
+    assert bus.voice_sample_rate == 16000
+
+
 def test_ws_roundtrip() -> None:
     bus = EventBus()
     client = TestClient(bus.app())

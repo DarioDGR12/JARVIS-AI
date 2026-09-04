@@ -19,3 +19,15 @@ def clean_for_tts(text: str) -> str:
     out = _MD_FENCE.sub(" ", out)
     out = _MD_MARK.sub("", out)
     return re.sub(r"\s+", " ", out).strip()
+
+
+_SENTENCE = re.compile(r"(?<=[.!?…])\s+")
+
+
+def split_sentences(text: str) -> list[str]:
+    """Split cleaned text into speakable sentences."""
+    cleaned = clean_for_tts(text)
+    if not cleaned:
+        return []
+    parts = [p.strip() for p in _SENTENCE.split(cleaned) if p.strip()]
+    return parts or [cleaned]

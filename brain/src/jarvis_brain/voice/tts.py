@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from jarvis_brain.bus.envelope import Event
-from jarvis_brain.voice.clean import clean_for_tts
+from jarvis_brain.voice.clean import clean_for_tts, split_sentences
 from jarvis_brain.voice.config import VoiceConfig
 from jarvis_brain.voice.events import hud_speak
 from jarvis_brain.voice.resample import resample_pcm_s16le
@@ -16,6 +16,7 @@ PcmSink = Callable[[bytes, int], None]
 
 class Synthesizer(Protocol):
     name: str
+    sample_rate: int
 
     def speak(self, text: str, voice: str) -> bytes:
         """Return native-rate mono s16le PCM."""
@@ -42,6 +43,7 @@ class LocalTTS:
     on_pcm: PcmSink | None = None
     engine: Synthesizer | None = None
     active_voice: str = "jarvis"
+    last_chunk: PcmChunk | None = None
     _stopped: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
@@ -78,13 +80,25 @@ class LocalTTS:
             self.on_event(
                 hud_speak(cleaned, voice=resolved, interrupt=interrupt)
             )
-        native = self.engine.speak(cleaned, resolved) if self.engine else b""
+        native_rate = (
+            getattr(self.engine, "sample_rate", None)
+            or self.config.native_sample_rate
+        )
+        native = b""
+        if self.engine:
+            if self.engine.name == "chatterbox":
+                for sentence in split_sentences(cleaned):
+                    native += self.engine.speak(sentence, resolved)
+            else:
+                native = self.engine.speak(cleaned, resolved)
         pcm = resample_pcm_s16le(
-            native, self.config.native_sample_rate, self.config.client_sample_rate
+            native, int(native_rate), self.config.client_sample_rate
         )
         if self.on_pcm and pcm:
             self.on_pcm(pcm, self.config.client_sample_rate)
-        return PcmChunk(pcm, self.config.client_sample_rate)
+        chunk = PcmChunk(pcm, self.config.client_sample_rate)
+        self.last_chunk = chunk
+        return chunk
 
     def speak_stream(
         self,
@@ -112,6 +126,7 @@ class ChatterboxRealtimeSynthesizer:
     """
 
     name = "chatterbox"
+    sample_rate = 24000
 
     def __init__(self, config: VoiceConfig) -> None:
         self.config = config
@@ -163,24 +178,66 @@ class PiperSynthesizer:
 
     def __init__(self, config: VoiceConfig) -> None:
         self.config = config
+        self.sample_rate = 22050
+        self._load_rate()
+
+    def _load_rate(self) -> None:
+        import json
+        from pathlib import Path
+
+        model = self.config.piper_model
+        if not model:
+            return
+        meta = Path(str(model) + ".json")
+        if not meta.is_file():
+            return
+        try:
+            data = json.loads(meta.read_text())
+            self.sample_rate = int((data.get("audio") or {}).get("sample_rate") or 22050)
+        except (OSError, ValueError, TypeError):
+            return
 
     def speak(self, text: str, voice: str) -> bytes:
+        import os
         import shutil
         import subprocess
+        from pathlib import Path
 
-        if not shutil.which(self.config.piper_bin):
+        if not shutil.which(self.config.piper_bin) and not Path(self.config.piper_bin).is_file():
             raise FileNotFoundError(
                 f"Piper binary {self.config.piper_bin!r} not on PATH. "
-                "Install rhasspy/piper or keep Chatterbox available."
+                "Run brain/scripts/setup_piper.sh or keep Chatterbox available."
+            )
+        if not self.config.piper_model:
+            raise FileNotFoundError(
+                "JARVIS_PIPER_MODEL is unset. Download a rhasspy/piper-voices .onnx."
+            )
+        cmd = [
+            self.config.piper_bin,
+            "--model",
+            self.config.piper_model,
+            "--output_raw",
+            "--quiet",
+        ]
+        if self.config.piper_espeak_data:
+            cmd.extend(["--espeak_data", self.config.piper_espeak_data])
+        env = os.environ.copy()
+        piper_dir = Path(self.config.piper_bin).resolve().parent
+        lib_dir = piper_dir
+        if lib_dir.is_dir():
+            env["LD_LIBRARY_PATH"] = (
+                f"{lib_dir}{os.pathsep}{env.get('LD_LIBRARY_PATH', '')}"
             )
         proc = subprocess.run(
-            [self.config.piper_bin, "--output-raw"],
+            cmd,
             input=text.encode("utf-8"),
             capture_output=True,
             check=False,
+            env=env,
         )
         if proc.returncode != 0:
-            raise RuntimeError(proc.stderr.decode("utf-8", errors="replace"))
+            err = proc.stderr.decode("utf-8", errors="replace")
+            raise RuntimeError(err or f"piper exited {proc.returncode}")
         return proc.stdout
 
     def stop(self) -> None:

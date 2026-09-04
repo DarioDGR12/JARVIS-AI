@@ -2,6 +2,8 @@ from jarvis_brain.bus.server import EventBus
 from jarvis_brain.config import BrainConfig
 from jarvis_brain.hermes.client import StreamEvent
 from jarvis_brain.turn import collect_bus_events, run_text_turn
+from jarvis_brain.voice.config import VoiceConfig
+from jarvis_brain.voice.tts import LocalTTS
 
 
 class FakeHermes:
@@ -31,3 +33,32 @@ async def test_text_turn_publishes_and_joins() -> None:
     assert "assistant.delta" in types
     assert types[-2] == "assistant.text"
     assert seen[-1].payload["state"] == "idle"
+
+
+class _Engine:
+    name = "fake"
+    sample_rate = 24000
+
+    def speak(self, text: str, voice: str) -> bytes:
+        return b"\x00\x10" * 24
+
+    def stop(self) -> None:
+        return
+
+
+async def test_text_turn_speaks() -> None:
+    bus = EventBus()
+    seen = collect_bus_events(bus)
+    tts = LocalTTS(VoiceConfig(), engine=_Engine())
+    reply = await run_text_turn(
+        user_text="hola",
+        cfg=BrainConfig(),
+        hermes=FakeHermes(),  # type: ignore[arg-type]
+        bus=bus,
+        session_id="s1",
+        tts=tts,
+    )
+    assert "JARVIS_PHASE1_OK" in reply
+    assert any(e.type == "hud.speak" for e in seen)
+    assert tts.last_chunk is not None
+    assert tts.last_chunk.pcm

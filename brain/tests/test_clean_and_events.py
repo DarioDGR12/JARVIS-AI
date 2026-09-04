@@ -1,4 +1,4 @@
-from jarvis_brain.voice.clean import clean_for_tts
+from jarvis_brain.voice.clean import clean_for_tts, split_sentences
 from jarvis_brain.voice.events import hud_speak
 
 
@@ -8,6 +8,10 @@ def test_clean_strips_secrets_and_think() -> None:
     assert "think" not in clean_for_tts(raw).lower()
     assert "Hello" in clean_for_tts(raw)
     assert "*" not in clean_for_tts(raw)
+
+
+def test_split_sentences() -> None:
+    assert split_sentences("Uno. Dos! Tres") == ["Uno.", "Dos!", "Tres"]
 
 
 def test_hud_speak_is_visual_only() -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 CLOUD_TTS_BLOCKLIST = frozenset(
@@ -39,6 +40,8 @@ class VoiceConfig:
     jarvis_wav: str | None = None
     companion_wav: str | None = None
     piper_bin: str = "piper"
+    piper_model: str | None = None
+    piper_espeak_data: str | None = None
     offline: bool = True
     voices: dict[str, str] = field(default_factory=dict)
 
@@ -57,15 +60,41 @@ class VoiceConfig:
 
     @classmethod
     def from_env(cls) -> VoiceConfig:
+        home = Path(
+            os.environ.get(
+                "JARVIS_PIPER_HOME",
+                str(Path.home() / ".local/share/jarvis/piper"),
+            )
+        )
+        default_bin = home / "piper" / "piper"
+        default_model = home / "voices" / "es_ES-davefx-medium.onnx"
+        default_espeak = home / "piper" / "espeak-ng-data"
         model_path = os.environ.get("JARVIS_CHATTERBOX_PATH") or None
         return cls(
             provider=os.environ.get("JARVIS_TTS_PROVIDER", "chatterbox"),
             fallback=os.environ.get("JARVIS_TTS_FALLBACK", "piper"),
             model=os.environ.get("JARVIS_CHATTERBOX_MODEL", "turbo"),
-            device=os.environ.get("JARVIS_TTS_DEVICE", "cuda"),
+            device=_default_device(),
             model_path=model_path,
             jarvis_wav=os.environ.get("JARVIS_VOICE_JARVIS") or None,
             companion_wav=os.environ.get("JARVIS_VOICE_COMPANION") or None,
-            piper_bin=os.environ.get("JARVIS_PIPER_BIN", "piper"),
+            piper_bin=os.environ.get("JARVIS_PIPER_BIN")
+            or (str(default_bin) if default_bin.is_file() else "piper"),
+            piper_model=os.environ.get("JARVIS_PIPER_MODEL")
+            or (str(default_model) if default_model.is_file() else None),
+            piper_espeak_data=os.environ.get("JARVIS_PIPER_ESPEAK")
+            or (str(default_espeak) if default_espeak.is_dir() else None),
             offline=os.environ.get("HF_HUB_OFFLINE", "1") != "0",
         )
+
+
+def _default_device() -> str:
+    env = os.environ.get("JARVIS_TTS_DEVICE")
+    if env:
+        return env
+    try:
+        import torch
+
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except ImportError:
+        return "cpu"
