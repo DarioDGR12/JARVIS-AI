@@ -25,6 +25,7 @@ from jarvis_brain.product.setup import apply_setup, load_product, public_status
 from jarvis_brain.product.start import ensure_stack
 from jarvis_brain.tools.stats import system_stats
 from jarvis_brain.turn import run_text_turn
+from jarvis_brain.vision.service import VisionService
 from jarvis_brain.voice.tts import LocalTTS
 
 
@@ -47,6 +48,7 @@ class ProductRuntime:
         ha: HomeAssistant | None = None,
         hud: HudState | None = None,
         world: MapState | None = None,
+        vision: VisionService | None = None,
     ) -> None:
         self.cfg = cfg
         self.bus = bus
@@ -59,9 +61,40 @@ class ProductRuntime:
         self.ha = ha or HomeAssistant()
         self.hud = hud or HudState()
         self.world = world or MapState()
+        self.vision = vision or VisionService()
         self.lock = asyncio.Lock()
+        self._watch_task: asyncio.Task[None] | None = None
         self.bus.subscribe(self.hud.apply)
         self.bus.subscribe(self.world.apply)
+        self.bus.subscribe(self.vision.apply)
+
+    def ensure_watch_task(self) -> None:
+        if self._watch_task is None or self._watch_task.done():
+            self._watch_task = asyncio.create_task(self._watch_loop())
+
+    async def _watch_loop(self) -> None:
+        while self.vision.watch_enabled:
+            await asyncio.sleep(max(5.0, self.vision.interval_ms / 1000))
+            if not self.vision.watch_enabled:
+                break
+            try:
+                shot = await asyncio.to_thread(self.vision.capture_once)
+            except Exception as exc:
+                await self.bus.publish(
+                    new_event("vision.error", {"reason": str(exc)}, source="vision")
+                )
+                continue
+            if shot.changed:
+                await self.bus.publish(
+                    new_event("vision.screen_context", shot.to_payload(), source="vision")
+                )
+                await self.bus.publish(
+                    new_event(
+                        "hud.display",
+                        {"kind": "toast", "content": shot.summary(), "title": "visión"},
+                        source="vision",
+                    )
+                )
 
 
 def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
@@ -102,6 +135,7 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             "auth": runtime.auth.status().to_payload(),
             "hud": runtime.hud.snapshot(),
             "map": runtime.world.snapshot(),
+            "vision": runtime.vision.snapshot(),
             "ha": {"configured": runtime.ha.cfg.configured, "up": False},
             "bus": {
                 "clients": len(runtime.bus._clients),
@@ -171,6 +205,7 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
                     session_id=runtime.session_id,
                     tts=runtime.tts,
                     memory=runtime.memory,
+                    vision=runtime.vision,
                 )
             except HermesError as exc:
                 return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
@@ -187,6 +222,7 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
                 "audio_wav_b64": audio,
                 "tts": runtime.tts.engine.name if runtime.tts and runtime.tts.engine else None,
                 "hud": runtime.hud.snapshot(),
+                "vision": runtime.vision.snapshot(),
             }
         )
 
@@ -285,6 +321,67 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             new_event("map.show_feeds", {"region": region, "tags": tags}, source="brain")
         )
         return JSONResponse({"ok": True, "feeds": hits, **runtime.world.snapshot()})
+
+    @app.get("/api/vision")
+    async def vision_state() -> dict:
+        preview = None
+        if runtime.vision.last_shot and runtime.vision.last_shot.jpeg:
+            preview = base64.b64encode(runtime.vision.last_shot.jpeg).decode("ascii")
+        return {"ok": True, **runtime.vision.snapshot(), "preview_jpeg_b64": preview}
+
+    @app.post("/api/vision/capture")
+    async def vision_capture(body: dict | None = None) -> JSONResponse:
+        await runtime.bus.publish(
+            new_event("vision.capture", {"mode": (body or {}).get("mode") or "once"}, source="hud")
+        )
+        try:
+            shot = await asyncio.to_thread(runtime.vision.capture_once)
+        except Exception as exc:
+            await runtime.bus.publish(
+                new_event("vision.error", {"reason": str(exc)}, source="vision")
+            )
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+        await runtime.bus.publish(
+            new_event("vision.screen_context", shot.to_payload(), source="vision")
+        )
+        await runtime.bus.publish(
+            new_event("hud.show_view", {"view": "vision", "visible": True}, source="brain")
+        )
+        return JSONResponse(
+            {
+                "ok": True,
+                **shot.to_payload(),
+                "preview_jpeg_b64": base64.b64encode(shot.jpeg).decode("ascii") if shot.jpeg else None,
+            }
+        )
+
+    @app.post("/api/vision/watch")
+    async def vision_watch(body: dict) -> JSONResponse:
+        enabled = bool((body or {}).get("enabled"))
+        interval = (body or {}).get("interval_ms")
+        if enabled:
+            gate = runtime.auth.require("vision.watch", reason="vision.watch")
+            if not gate.ok:
+                await runtime.bus.publish(
+                    new_event("auth.challenge", {"reason": "vision.watch", "tool": "vision.watch"}, source="brain")
+                )
+                await runtime.bus.publish(
+                    new_event("auth.result", gate.to_payload(), source="auth")
+                )
+                return JSONResponse(
+                    {"ok": False, "error": "auth required", "auth": gate.to_payload()},
+                    status_code=403,
+                )
+        await runtime.bus.publish(
+            new_event(
+                "vision.watch",
+                {"enabled": enabled, "interval_ms": interval},
+                source="hud",
+            )
+        )
+        if enabled:
+            runtime.ensure_watch_task()
+        return JSONResponse({"ok": True, **runtime.vision.snapshot()})
 
     @app.get("/api/system")
     async def system() -> dict:

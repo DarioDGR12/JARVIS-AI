@@ -25,6 +25,7 @@
   let busSocket = null;
   let mapFrame = null;
   let pendingMap = [];
+  let camStream = null;
 
   function tauri() {
     return window.__TAURI__ || null;
@@ -77,6 +78,7 @@
       el.textContent = (toast.title ? toast.title + " · " : "") + (toast.content || "");
       list.appendChild(el);
     });
+    applyCamFromHud(hud);
   }
 
   function paintView(name) {
@@ -92,6 +94,7 @@
     if (name === "ha") loadHa();
     if (name === "map") mountMap();
     else unmountMap();
+    if (name === "vision") refreshVision();
   }
 
   async function showView(name, opts) {
@@ -132,9 +135,13 @@
     }
     if (ev.type === "hud.set_mode" || ev.type === "hud.display" || ev.type === "hud.speak"
       || ev.type === "hud.highlight" || ev.type === "brain.status" || ev.type === "persona.changed"
-      || ev.type === "auth.challenge" || ev.type === "auth.result" || ev.type === "hud.ready") {
+      || ev.type === "auth.challenge" || ev.type === "auth.result" || ev.type === "hud.ready"
+      || ev.type === "hud.camera" || ev.type === "vision.screen_context" || ev.type === "vision.error"
+      || ev.type === "vision.watch") {
       refreshHud();
     }
+    if (ev.type === "hud.camera") applyCamFromHud(ev.payload || {});
+    if (String(ev.type).indexOf("vision.") === 0) refreshVision();
   }
 
   function mapStatus(text) {
@@ -205,6 +212,147 @@
     if (sel) sel.textContent = "";
   }
 
+  function bindCamVideos() {
+    ["cam-home", "cam-vision"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.srcObject = camStream;
+    });
+  }
+
+  async function startCam() {
+    if (camStream) {
+      bindCamVideos();
+      document.body.classList.add("cam-on");
+      return true;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      document.getElementById("cam-msg").textContent = "getUserMedia no disponible";
+      return false;
+    }
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 640 } },
+        audio: false,
+      });
+      bindCamVideos();
+      document.body.classList.add("cam-on");
+      document.getElementById("btn-cam").textContent = "Apagar cámara";
+      document.getElementById("cam-msg").textContent = "cámara en vivo";
+      document.getElementById("cam-home-empty").textContent = "sin cámara";
+      return true;
+    } catch (err) {
+      document.body.classList.remove("cam-on");
+      document.getElementById("cam-vision-empty").textContent = "sin cámara / permiso";
+      document.getElementById("cam-home-empty").textContent = "sin cámara";
+      document.getElementById("cam-msg").textContent = String(err.message || err);
+      return false;
+    }
+  }
+
+  function stopCam() {
+    if (camStream) {
+      camStream.getTracks().forEach((t) => t.stop());
+      camStream = null;
+    }
+    bindCamVideos();
+    document.body.classList.remove("cam-on");
+    const btnCam = document.getElementById("btn-cam");
+    if (btnCam) btnCam.textContent = "Encender cámara";
+    const msg = document.getElementById("cam-msg");
+    if (msg) msg.textContent = "cámara apagada";
+  }
+
+  function applyCamFromHud(hud) {
+    if (!hud) return;
+    if (hud.camera_hold !== undefined) {
+      document.body.classList.toggle("cam-hold", !!hud.camera_hold);
+      if (camStream) {
+        camStream.getVideoTracks().forEach((t) => {
+          t.enabled = !hud.camera_hold;
+        });
+      }
+    }
+    if (hud.camera_enabled === true) startCam();
+    if (hud.camera_enabled === false && camStream) stopCam();
+  }
+
+  async function publishCam(enabled) {
+    const base = await brainUrl();
+    await fetch(base + "/api/bus", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "hud.camera",
+        source: "hud",
+        payload: { enabled, hold: false },
+      }),
+    });
+  }
+
+  function showScreenPreview(b64) {
+    const img = document.getElementById("screen-preview");
+    const empty = document.getElementById("screen-empty");
+    if (!img) return;
+    if (b64) {
+      img.src = "data:image/jpeg;base64," + b64;
+      img.hidden = false;
+      if (empty) empty.hidden = true;
+    } else {
+      img.hidden = true;
+      if (empty) empty.hidden = false;
+    }
+  }
+
+  async function refreshVision() {
+    try {
+      const base = await brainUrl();
+      const s = await fetch(base + "/api/vision").then((r) => r.json());
+      const last = s.last || {};
+      document.getElementById("vision-msg").textContent =
+        (last.text || "sin captura") + (s.watch ? " · WATCH" : "") + (s.error ? " · " + s.error : "");
+      document.getElementById("btn-watch").classList.toggle("on", !!s.watch);
+      document.getElementById("btn-watch").textContent = s.watch ? "Parar vigilancia" : "Vigilancia pantalla";
+      showScreenPreview(s.preview_jpeg_b64);
+    } catch (err) {
+      document.getElementById("vision-msg").textContent = String(err);
+    }
+  }
+
+  async function captureScreen() {
+    const box = document.getElementById("vision-msg");
+    box.textContent = "capturando…";
+    try {
+      const base = await brainUrl();
+      const r = await fetch(base + "/api/vision/capture", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "once" }),
+      });
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || r.statusText);
+      box.textContent = data.text || "ok";
+      showScreenPreview(data.preview_jpeg_b64);
+    } catch (err) {
+      box.textContent = String(err.message || err);
+    }
+  }
+
+  async function toggleWatch() {
+    const base = await brainUrl();
+    const cur = await fetch(base + "/api/vision").then((r) => r.json());
+    const r = await fetch(base + "/api/vision/watch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: !cur.watch, interval_ms: 15000 }),
+    });
+    const data = await r.json();
+    if (r.status === 403) {
+      document.getElementById("vision-msg").textContent = "Howdy: " + ((data.auth && data.auth.error) || "auth");
+      return;
+    }
+    refreshVision();
+  }
+
   async function refreshHud() {
     try {
       const base = await brainUrl();
@@ -244,9 +392,10 @@
       const mode = p.mode === "byok" ? "BYOK " + (p.provider || "") : (p.mode || "demo");
       const auth = s.auth && s.auth.enrolled ? "howdy" : "sin howdy";
       const hud = s.hud || {};
+      const cam = hud.camera_enabled ? (hud.camera_hold ? "cam hold" : "cam") : "sin cam";
       meta.textContent = (s.ok ? "en línea" : "Hermes caído") + " · " + mode
         + (s.tts ? " · voz " + s.tts : " · sin voz") + " · " + auth
-        + " · HUD " + (hud.operational || "?");
+        + " · " + cam + " · HUD " + (hud.operational || "?");
       if (p.provider) providerEl.value = p.provider;
       if (p.model) document.getElementById("model").value = p.model;
       if (p.base_url) document.getElementById("base-url").value = p.base_url;
@@ -266,7 +415,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          camera: false,
+          camera: !!camStream,
           viewport: { w: window.innerWidth, h: window.innerHeight },
         }),
       });
@@ -405,6 +554,17 @@
   providerEl.addEventListener("change", syncProviderFields);
   document.getElementById("btn-settings").addEventListener("click", () => showView("settings"));
   document.getElementById("btn-back").addEventListener("click", () => showView("home"));
+  document.getElementById("btn-capture").addEventListener("click", captureScreen);
+  document.getElementById("btn-watch").addEventListener("click", toggleWatch);
+  document.getElementById("btn-cam").addEventListener("click", async () => {
+    if (camStream) {
+      stopCam();
+      await publishCam(false);
+      return;
+    }
+    const ok = await startCam();
+    await publishCam(ok);
+  });
   document.querySelectorAll("#nav button").forEach((b) => {
     b.addEventListener("click", () => showView(b.dataset.view));
   });

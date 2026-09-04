@@ -12,17 +12,17 @@
       {
         "label": "main",
         "title": "JARVIS",
-        "width": 960,
-        "height": 640,
-        "minWidth": 720,
-        "minHeight": 520,
+        "width": 1040,
+        "height": 700,
+        "minWidth": 800,
+        "minHeight": 560,
         "decorations": false,
         "resizable": true,
         "center": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; media-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; script-src 'self'; frame-src 'self'; worker-src 'self' blob:"
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; media-src 'self' blob: data: mediastream:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; script-src 'self'; frame-src 'self'; worker-src 'self' blob:"
     }
   },
   "bundle": {

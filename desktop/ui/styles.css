@@ -72,6 +72,22 @@ body { display: flex; flex-direction: column; position: relative; }
 #map-slot { flex: 1; min-width: 0; min-height: 280px; border: 1px solid var(--line); background: #05070b; position: relative; }
 #map-slot iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 #map-side { width: 220px; display: flex; flex-direction: column; gap: 8px; }
+#vision-view { max-width: 1100px; }
+#vision-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-height: 0; flex: 1; }
+.vision-card { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.cam-frame {
+  position: relative; background: #05070b; border: 1px solid var(--line);
+  aspect-ratio: 16/10; overflow: hidden;
+}
+.cam-frame.tall { flex: 1; min-height: 180px; aspect-ratio: auto; }
+.cam-frame video, .cam-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cam-empty {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  color: var(--mute); letter-spacing: 0.12em; text-transform: uppercase; font-size: 11px;
+}
+body.cam-on #cam-home-empty, body.cam-on #cam-vision-empty { display: none; }
+body.cam-hold video { opacity: 0.15; filter: grayscale(1); }
+#btn-watch.on { border-color: var(--danger); color: var(--danger); }
 #settings-view[hidden], #chat-view[hidden], #system-view[hidden],
 #ha-view[hidden], #home-view[hidden], #map-view[hidden], #vision-view[hidden] { display: none; }
 

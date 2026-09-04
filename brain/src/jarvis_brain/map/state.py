@@ -55,6 +55,7 @@ class MapState:
                 "lon": payload.get("lon"),
                 "zoom": payload.get("zoom"),
             }
+            self.visible = list(self.feeds)
         elif event.type == "map.query":
             self.last_query = str(payload.get("q") or "")
             self.visible = query_feeds(self.feeds, self.last_query)

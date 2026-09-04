@@ -41,6 +41,11 @@ def test_refuse_default_mem0() -> None:
         refuse_default_mem0()
 
 
+def test_phrase_vision() -> None:
+    assert match_phrase("captura la pantalla").action == "vision.capture"
+    assert match_phrase("abre la webcam").action == "vision.camera"
+
+
 def test_phrase_map_globe() -> None:
     open_map = match_phrase("abre el mapa")
     assert open_map is not None and open_map.action == "map.show"

@@ -9,6 +9,7 @@ from jarvis_brain.hermes.client import HermesClient, HermesError
 from jarvis_brain.memory.store import LocalMemory
 from jarvis_brain.persona.overlay import choose_persona, persona_overlay
 from jarvis_brain.tools.phrase_map import match_phrase
+from jarvis_brain.vision.service import VisionService
 from jarvis_brain.voice.tts import LocalTTS, PcmChunk
 
 
@@ -36,6 +37,7 @@ async def run_text_turn(
     tts: LocalTTS | None = None,
     voice: str | None = None,
     memory: LocalMemory | None = None,
+    vision: VisionService | None = None,
 ) -> str:
     """One text turn: phrase-map, memory, Hermes, optional speak."""
     persona = choose_persona(user_text)
@@ -72,6 +74,18 @@ async def run_text_turn(
             )
         )
         reply = hit.reply
+        if hit.action == "vision.capture" and vision is not None:
+            try:
+                shot = await asyncio.to_thread(vision.capture_once)
+                reply = shot.summary()
+                await bus.publish(
+                    new_event("vision.screen_context", shot.to_payload(), source="vision")
+                )
+            except Exception as exc:
+                reply = f"No pude capturar la pantalla: {exc}"
+                await bus.publish(
+                    new_event("vision.error", {"reason": str(exc)}, source="vision")
+                )
         await bus.publish(
             new_event(
                 "assistant.text",
@@ -94,6 +108,21 @@ async def run_text_turn(
             await bus.publish(new_event("map.focus", hit.payload, source="brain"))
         elif hit.action == "map.query":
             await bus.publish(new_event("map.query", hit.payload, source="brain"))
+        elif hit.action == "vision.capture":
+            await bus.publish(
+                new_event("hud.show_view", {"view": "vision", "visible": True}, source="brain")
+            )
+        elif hit.action == "vision.camera":
+            await bus.publish(
+                new_event("hud.show_view", {"view": "vision", "visible": True}, source="brain")
+            )
+            await bus.publish(
+                new_event(
+                    "hud.camera",
+                    {"enabled": bool(hit.payload.get("enabled")), "hold": False},
+                    source="brain",
+                )
+            )
         if tts and reply:
             await speak_reply(tts, bus, reply, voice=voice, session_id=session_id)
         await bus.publish(

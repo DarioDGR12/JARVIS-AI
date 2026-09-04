@@ -45,6 +45,20 @@ _MAP_FOCUS = re.compile(
     r"\b(d[oó]nde est[aá]|enfoca|focus|mira)\b\s+(.+)$",
     re.I,
 )
+_VISION_CAPTURE = re.compile(
+    r"\b(captura(r)?( la)? pantalla|screenshot|qu[eé] hay en (la )?pantalla|"
+    r"lee(r)? la pantalla|mira( la)? pantalla|what.?s on (the )?screen)\b",
+    re.I,
+)
+_VISION_CAM_OFF = re.compile(
+    r"\b(cierra|apaga|quita|stop)\b.+\b(c[aá]mara|webcam|camera)\b",
+    re.I,
+)
+_VISION_CAM_ON = re.compile(
+    r"\b(abre|abrir|enciende|prende|show|open)\b.+\b(c[aá]mara|webcam|camera)\b"
+    r"|\b(c[aá]mara|webcam)\b(\s+(por favor|please))?$",
+    re.I,
+)
 
 
 def _run(cmd: list[str]) -> bool:
@@ -82,6 +96,12 @@ def match_phrase(text: str) -> PhraseHit | None:
         return None
     if _STATS.search(raw):
         return PhraseHit("system.stats", format_stats(system_stats()), True)
+    if _VISION_CAPTURE.search(raw):
+        return PhraseHit("vision.capture", "Capturando la pantalla.", True)
+    if _VISION_CAM_OFF.search(raw):
+        return PhraseHit("vision.camera", "Cerrando la cámara.", True, {"enabled": False})
+    if _VISION_CAM_ON.search(raw):
+        return PhraseHit("vision.camera", "Abriendo la cámara.", True, {"enabled": True})
     if _MAP_OPEN.search(raw):
         return PhraseHit("map.show", "Abriendo el globo.", True)
     focus = _MAP_FOCUS.search(raw)

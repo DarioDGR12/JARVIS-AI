@@ -1,6 +1,6 @@
 # Plan de integración JARVIS-AI
 
-**Estado:** Producto usable (bus + Hermes + TTS Piper + app Tauri + HUD + globo SENTINEL en iframe). Howdy / HA / memoria local / phrase-map / stats están en el cerebro. Visión, vigilancia y mem0 OSS **aún no**.  
+**Estado:** Producto usable (bus + Hermes + TTS Piper + app Tauri + HUD + globo + visión de pantalla + webcam HUD). Howdy / HA / memoria / phrase-map están. Vigilancia YOLO y mem0 OSS **aún no**.  
 **Fecha:** 2026-09-04  
 **Repo:** [DarioDGR12/JARVIS-AI](https://github.com/DarioDGR12/JARVIS-AI) (licencia Apache-2.0)  
 **Plataforma objetivo:** Pop!_OS (COSMIC / GNOME, Linux, Wayland)  

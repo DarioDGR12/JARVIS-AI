@@ -15,6 +15,9 @@ def test_repo_contains_tauri_app() -> None:
     assert 'data-view="vision"' in html
     assert 'class="bar"' in html
     assert 'id="map-slot"' in html
+    assert 'id="cam-home"' in html
+    assert 'id="cam-vision"' in html
+    assert 'id="btn-capture"' in html
     globe = root / "desktop" / "ui" / "globe"
     assert (globe / "index.html").is_file()
     assert (globe / "globe.js").is_file()
@@ -26,6 +29,7 @@ def test_repo_contains_tauri_app() -> None:
     csp = (root / "desktop" / "src-tauri" / "tauri.conf.json").read_text()
     assert "ws://127.0.0.1:*" in csp
     assert "frame-src 'self'" in csp
+    assert "mediastream:" in csp
 
 
 def test_desktop_bin_honors_env(tmp_path: Path, monkeypatch) -> None:

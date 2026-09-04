@@ -35,6 +35,7 @@ class HudState:
     visual: str = "jarvis"
     view: str = "home"
     camera_hold: bool = False
+    camera_enabled: bool = False
     last_display: dict[str, Any] | None = None
     last_speak: dict[str, Any] | None = None
     toasts: list[dict[str, Any]] = field(default_factory=list)
@@ -46,6 +47,7 @@ class HudState:
             "visual": self.visual,
             "view": self.view,
             "camera_hold": self.camera_hold,
+            "camera_enabled": self.camera_enabled,
             "last_display": self.last_display,
             "last_speak": self.last_speak,
             "toasts": list(self.toasts[-8:]),
@@ -100,7 +102,10 @@ class HudState:
             }
             self.operational = "speaking"
         elif event.type == "hud.camera":
-            self.camera_hold = bool(payload.get("hold"))
+            if "hold" in payload:
+                self.camera_hold = bool(payload.get("hold"))
+            if "enabled" in payload:
+                self.camera_enabled = bool(payload.get("enabled"))
         elif event.type == "hud.ready":
             self.ready = True
         elif event.type == "brain.status":
