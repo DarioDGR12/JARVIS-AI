@@ -30,7 +30,11 @@ build-backend = "hatchling.build"
 packages = ["src/jarvis_brain"]
 
 [project.scripts]
+jarvis = "jarvis_brain.__main__:main"
 jarvis-brain = "jarvis_brain.__main__:main"
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/jarvis_brain/console/static/index.html" = "jarvis_brain/console/static/index.html"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,5 +1,5 @@
 from jarvis_brain.bus.server import EventBus
-from jarvis_brain.config import BrainConfig
+from jarvis_brain.config import BrainConfig, build_overlay
 from jarvis_brain.hermes.client import StreamEvent
 from jarvis_brain.turn import collect_bus_events, run_text_turn
 from jarvis_brain.voice.config import VoiceConfig
@@ -19,7 +19,7 @@ class FakeHermes:
 async def test_text_turn_publishes_and_joins() -> None:
     bus = EventBus()
     seen = collect_bus_events(bus)
-    cfg = BrainConfig()
+    cfg = BrainConfig(overlay=build_overlay(qa=True))
     reply = await run_text_turn(
         user_text="hola",
         cfg=cfg,
@@ -52,7 +52,7 @@ async def test_text_turn_speaks() -> None:
     tts = LocalTTS(VoiceConfig(), engine=_Engine())
     reply = await run_text_turn(
         user_text="hola",
-        cfg=BrainConfig(),
+        cfg=BrainConfig(overlay=build_overlay(qa=True)),
         hermes=FakeHermes(),  # type: ignore[arg-type]
         bus=bus,
         session_id="s1",

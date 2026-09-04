@@ -3,6 +3,28 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+PERSONALITY_OVERLAY = (
+    "You are JARVIS, a personal assistant. Tone: dry, neutral, functional. "
+    "Answer in 1-3 sentences. Do not mention being an LLM. "
+    "Reply in the user's language."
+)
+QA_OVERLAY_SUFFIX = (
+    " If this overlay reached you, include the exact token JARVIS_PHASE1_OK "
+    "once in your reply."
+)
+
+
+def _truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def build_overlay(*, qa: bool | None = None) -> str:
+    base = os.environ.get("JARVIS_OVERLAY", PERSONALITY_OVERLAY).strip()
+    use_qa = _truthy("JARVIS_QA") if qa is None else qa
+    if use_qa and "JARVIS_PHASE1_OK" not in base:
+        return f"{base}{QA_OVERLAY_SUFFIX}"
+    return base
+
 
 @dataclass(frozen=True)
 class BrainConfig:
@@ -14,13 +36,7 @@ class BrainConfig:
     hermes_session_name: str = "jarvis-main"
     hermes_session_key: str = "jarvis:user:main"
     hermes_timeout_s: float = 120.0
-    overlay: str = (
-        "You are JARVIS, a personal assistant. Tone: dry, neutral, functional. "
-        "Answer in 1-3 sentences. Do not mention being an LLM. "
-        "Reply in the user's language. "
-        "If this overlay reached you, include the exact token JARVIS_PHASE1_OK "
-        "once in your reply."
-    )
+    overlay: str = PERSONALITY_OVERLAY
 
     @classmethod
     def from_env(cls) -> BrainConfig:
@@ -39,4 +55,5 @@ class BrainConfig:
                 "JARVIS_SESSION_KEY", "jarvis:user:main"
             ),
             hermes_timeout_s=float(os.environ.get("JARVIS_HERMES_TIMEOUT", "120")),
+            overlay=build_overlay(),
         )

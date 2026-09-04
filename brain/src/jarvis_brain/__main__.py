@@ -3,19 +3,36 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
+from pathlib import Path
 
 import httpx
+import uvicorn
 
-from jarvis_brain.bus.server import EventBus, serve_bus
+from jarvis_brain.bus.server import EventBus
 from jarvis_brain.config import BrainConfig
 from jarvis_brain.hermes.client import HermesClient, HermesError
+from jarvis_brain.product.app import ProductRuntime, attach_product_routes
+from jarvis_brain.product.setup import apply_setup, load_product
+from jarvis_brain.product.start import ensure_demo_stack, hermes_up
 from jarvis_brain.turn import run_text_turn, speak_reply
 from jarvis_brain.voice.config import VoiceConfig
 from jarvis_brain.voice.tts import LocalTTS
 from jarvis_brain.voice.wav import wav_info, write_wav
 
 log = logging.getLogger("jarvis")
+
+
+def _apply_saved_product() -> None:
+    product = load_product()
+    if not product:
+        return
+    if product.qa:
+        os.environ.setdefault("JARVIS_QA", "1")
+    os.environ.setdefault("JARVIS_HERMES_URL", product.hermes_url)
+    if product.tts:
+        os.environ.setdefault("JARVIS_TTS_PROVIDER", product.tts)
 
 
 def _load_tts(*, required: bool) -> LocalTTS | None:
@@ -31,30 +48,36 @@ def _load_tts(*, required: bool) -> LocalTTS | None:
     return tts
 
 
+def _brain_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
 async def _chat(args: argparse.Namespace) -> int:
     cfg = BrainConfig.from_env()
     bus = EventBus()
     hermes = HermesClient(cfg)
     tts = None if args.no_speak else _load_tts(required=bool(args.wav))
-    bus_task: asyncio.Task[None] | None = None
-    if not args.no_bus:
-        bus_task = asyncio.create_task(serve_bus(bus, cfg.bus_host, cfg.bus_port))
-        await asyncio.sleep(0.2)
-        try:
-            async with httpx.AsyncClient() as probe:
-                health = await probe.get(
-                    f"http://127.0.0.1:{cfg.bus_port}/health", timeout=2.0
-                )
-            print(f"Bus health {health.status_code} {health.text}", flush=True)
-        except Exception as exc:
-            print(f"Bus health probe failed: {exc}", flush=True)
+    try:
+        ensure_demo_stack(_brain_root(), cfg.hermes_api_key)
+    except RuntimeError as exc:
+        log.warning("%s", exc)
+    server: asyncio.Task[None] | None = None
     try:
         await hermes.ping()
         session_id = await hermes.ensure_session()
         print(f"Hermes session {session_id} @ {cfg.hermes_base_url}", flush=True)
-        print(f"Bus ws://{cfg.bus_host}:{cfg.bus_port}/ws/bus", flush=True)
-        print(f"Voice ws://{cfg.bus_host}:{cfg.bus_port}/ws/voice", flush=True)
-        print("Overlay (instructions) will be sent every turn.", flush=True)
+        if not args.no_bus:
+            server = asyncio.create_task(_serve_http(cfg, bus, hermes, tts, session_id))
+            await asyncio.sleep(0.25)
+            try:
+                async with httpx.AsyncClient() as probe:
+                    health = await probe.get(
+                        f"http://127.0.0.1:{cfg.bus_port}/health", timeout=2.0
+                    )
+                print(f"Bus health {health.status_code} {health.text}", flush=True)
+            except Exception as exc:
+                print(f"Bus health probe failed: {exc}", flush=True)
+        print(f"Console http://127.0.0.1:{cfg.bus_port}/", flush=True)
         if args.message:
             return await _one_turn(
                 args.message, cfg, hermes, bus, session_id, tts, args.wav
@@ -84,8 +107,8 @@ async def _chat(args: argparse.Namespace) -> int:
         return 1
     finally:
         await hermes.close()
-        if bus_task:
-            bus_task.cancel()
+        if server:
+            server.cancel()
 
 
 async def _one_turn(
@@ -114,12 +137,6 @@ async def _one_turn(
     print(f"jarvis> {reply}", flush=True)
     if "JARVIS_PHASE1_OK" in reply:
         print("QA: instructions overlay reached the model (JARVIS_PHASE1_OK).", flush=True)
-    else:
-        print(
-            "QA: reply did not contain JARVIS_PHASE1_OK — overlay may not "
-            "have reached the model.",
-            file=sys.stderr,
-        )
     if wav_path and tts and tts.last_chunk and tts.last_chunk.pcm:
         chunk = tts.last_chunk
         dest = write_wav(wav_path, chunk.pcm, chunk.sample_rate)
@@ -136,7 +153,6 @@ async def _one_turn(
 
 
 async def _speak(args: argparse.Namespace) -> int:
-    cfg = BrainConfig.from_env()
     bus = EventBus()
     tts = _load_tts(required=True)
     assert tts is not None
@@ -163,35 +179,134 @@ async def _speak(args: argparse.Namespace) -> int:
     return 0
 
 
-async def _serve() -> int:
+async def _serve_http(
+    cfg: BrainConfig,
+    bus: EventBus,
+    hermes: HermesClient,
+    tts: LocalTTS | None,
+    session_id: str,
+) -> None:
+    runtime = ProductRuntime(
+        cfg=cfg, bus=bus, hermes=hermes, tts=tts, session_id=session_id
+    )
+    app = attach_product_routes(bus.app(), runtime)
+    config = uvicorn.Config(
+        app, host=cfg.bus_host, port=cfg.bus_port, log_level="info", lifespan="off"
+    )
+    log.info("JARVIS console on http://127.0.0.1:%s/", cfg.bus_port)
+    await uvicorn.Server(config).serve()
+
+
+async def _start() -> int:
     cfg = BrainConfig.from_env()
+    try:
+        ensure_demo_stack(_brain_root(), cfg.hermes_api_key)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     bus = EventBus()
-    await serve_bus(bus, cfg.bus_host, cfg.bus_port)
+    hermes = HermesClient(cfg)
+    tts = _load_tts(required=False)
+    try:
+        await hermes.ping()
+        session_id = await hermes.ensure_session()
+        print(f"Console http://127.0.0.1:{cfg.bus_port}/", flush=True)
+        await _serve_http(cfg, bus, hermes, tts, session_id)
+    except HermesError as exc:
+        print(f"Hermes error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        await hermes.close()
+    return 0
+
+
+def _cmd_setup(args: argparse.Namespace) -> int:
+    provider = "demo" if args.demo else args.provider
+    if not provider:
+        print("Use --demo or --provider openai|anthropic|openrouter|custom", file=sys.stderr)
+        return 2
+    key = args.api_key or os.environ.get("JARVIS_API_KEY") or ""
+    if provider == "demo" and not key:
+        key = "sk-local"
+    if provider != "demo" and not key:
+        print(
+            "BYOK requires --api-key (or JARVIS_API_KEY). "
+            "The key is written to ~/.hermes/.env (0600), never to git.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        product = apply_setup(
+            provider=provider,
+            api_key=key,
+            model=args.model,
+            base_url=args.base_url,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(f"Configured {product.mode} · {product.provider} · {product.model}", flush=True)
+    print("Key stored in ~/.hermes/.env (not in the repo).", flush=True)
+    print("Restart: python3 -m jarvis_brain start", flush=True)
+    if product.mode == "byok":
+        print("If Hermes was already running, restart it so it picks up the new provider.", flush=True)
+    return 0
+
+
+def _cmd_status() -> int:
+    cfg = BrainConfig.from_env()
+    product = load_product()
+    print(f"product: {product.mode if product else 'unset'}"
+          f"{' · ' + product.provider + ' · ' + product.model if product else ''}")
+    print(f"hermes: {cfg.hermes_base_url} "
+          f"{'up' if hermes_up(cfg.hermes_base_url, cfg.hermes_api_key) else 'down'}")
+    try:
+        tts = LocalTTS(VoiceConfig.from_env())
+        print(f"tts: {tts.engine.name if tts.engine else 'none'}")
+    except Exception as exc:
+        print(f"tts: unavailable ({exc})")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    parser = argparse.ArgumentParser(prog="jarvis-brain")
+    _apply_saved_product()
+    parser = argparse.ArgumentParser(
+        prog="jarvis",
+        description="JARVIS — BYOK personal assistant (local TTS, Hermes engine).",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
-    chat = sub.add_parser("chat", help="text turn against Hermes")
+
+    setup = sub.add_parser("setup", help="configure BYOK or demo mode")
+    setup.add_argument("--demo", action="store_true", help="local mock model (no cloud key)")
+    setup.add_argument("--provider", choices=("openai", "anthropic", "openrouter", "custom", "demo"))
+    setup.add_argument("--api-key", help="provider key; stored in ~/.hermes/.env")
+    setup.add_argument("--model", help="model id")
+    setup.add_argument("--base-url", help="OpenAI-compatible base URL (custom)")
+
+    sub.add_parser("status", help="show product / Hermes / TTS")
+    sub.add_parser("start", help="open the product (console + API + bus)")
+
+    chat = sub.add_parser("chat", help="text turn in the terminal")
     chat.add_argument("-m", "--message", help="single message, then exit")
     chat.add_argument("--once", action="store_true", help="read one stdin line")
-    chat.add_argument("--no-bus", action="store_true", help="skip WS server")
+    chat.add_argument("--no-bus", action="store_true", help="skip HTTP/WS server")
     chat.add_argument("--no-speak", action="store_true", help="skip local TTS")
     chat.add_argument("--wav", help="write the spoken reply to a WAV file")
-    speak = sub.add_parser("speak", help="local TTS only (no Hermes)")
+
+    speak = sub.add_parser("speak", help="local TTS only")
     speak.add_argument("-m", "--message", help="text to speak")
-    speak.add_argument(
-        "--wav",
-        default="/tmp/jarvis-speak.wav",
-        help="output WAV path",
-    )
+    speak.add_argument("--wav", default="/tmp/jarvis-speak.wav")
     speak.add_argument("--voice", default="jarvis", choices=("jarvis", "companion"))
-    sub.add_parser("serve", help="run the event bus only")
+    sub.add_parser("serve", help="same as start")
+
     args = parser.parse_args(argv)
-    if args.cmd == "serve":
-        return asyncio.run(_serve())
+    if args.cmd == "setup":
+        return _cmd_setup(args)
+    if args.cmd == "status":
+        return _cmd_status()
+    if args.cmd in {"start", "serve"}:
+        return asyncio.run(_start())
     if args.cmd == "speak":
         return asyncio.run(_speak(args))
     return asyncio.run(_chat(args))

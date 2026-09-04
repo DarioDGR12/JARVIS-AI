@@ -1,6 +1,6 @@
 # jarvis-brain
 
-Cerebro del monorepo. Fase 1: bus + Hermes + turno de texto. Fase 2: **TTS local**.
+Cerebro del producto. Comandos: `setup`, `start`, `chat`, `speak`, `status`. Consola en `http://127.0.0.1:8765/`.
 
 ## Turno de texto (Fase 1)
 
