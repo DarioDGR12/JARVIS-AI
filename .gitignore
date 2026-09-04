@@ -9,5 +9,5 @@ build/
 .env
 .hf-cache/
 node_modules/
-target/
+/desktop/src-tauri/target/
 desktop/src-tauri/gen/
