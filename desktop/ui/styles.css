@@ -32,9 +32,13 @@ body { display: flex; flex-direction: column; position: relative; }
 .frame::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
 
 #titlebar {
-  height: 40px; display: flex; align-items: center; gap: 12px;
-  padding: 0 10px 0 16px; border-bottom: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: stretch; gap: 0;
+  border-bottom: 1px solid var(--line);
   user-select: none; position: relative; z-index: 1;
+}
+.bar {
+  height: 40px; display: flex; align-items: center; gap: 12px;
+  padding: 0 10px 0 16px;
 }
 .brand { letter-spacing: 0.28em; font-size: 12px; color: var(--accent); }
 #mode-chip {
@@ -43,7 +47,7 @@ body { display: flex; flex-direction: column; position: relative; }
 }
 #meta { flex: 1; color: var(--mute); font-size: 12px; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#nav { display: flex; gap: 4px; }
+#nav { display: flex; gap: 4px; flex-wrap: wrap; padding: 0 16px 8px; }
 #nav button {
   border: 1px solid var(--line); background: transparent; color: var(--mute);
   font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 8px; cursor: pointer;
@@ -127,8 +131,8 @@ body { display: flex; flex-direction: column; position: relative; }
 
 #log { flex: 1; overflow: auto; border: 1px solid var(--line); background: var(--panel);
   padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-.msg { padding: 10px 12px; max-width: 92%; white-space: pre-wrap; }
-.you { align-self: flex-end; background: var(--you); border: 1px solid var(--line); }
+.msg { padding: 10px 12px; max-width: 80%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.you { align-self: flex-end; background: var(--you); border: 1px solid var(--accent); }
 .jarvis { align-self: flex-start; background: var(--me); border-left: 2px solid var(--accent); }
 .err { color: #e07a7a; }
 .hint { color: var(--mute); font-size: 13px; padding: 24px 8px; }

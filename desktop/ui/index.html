@@ -8,10 +8,18 @@
 </head>
 <body data-mode="boot" data-visual="jarvis" data-view="home">
   <div class="frame" aria-hidden="true"></div>
-  <header id="titlebar" data-tauri-drag-region>
-    <div class="brand" data-tauri-drag-region>JARVIS</div>
-    <div id="mode-chip">BOOT</div>
-    <div id="meta">conectando…</div>
+  <header id="titlebar">
+    <div class="bar" data-tauri-drag-region>
+      <div class="brand" data-tauri-drag-region>JARVIS</div>
+      <div id="mode-chip">BOOT</div>
+      <div id="meta">conectando…</div>
+      <div class="win">
+        <button type="button" id="btn-settings" title="Ajustes">⚙</button>
+        <button type="button" id="btn-min" title="Minimizar">–</button>
+        <button type="button" id="btn-max" title="Maximizar">□</button>
+        <button type="button" id="btn-close" class="close" title="Cerrar">×</button>
+      </div>
+    </div>
     <nav id="nav">
       <button type="button" data-view="home" class="on">Inicio</button>
       <button type="button" data-view="chat">Chat</button>
@@ -21,12 +29,6 @@
       <button type="button" data-view="vision">Visión</button>
       <button type="button" data-view="settings">Ajustes</button>
     </nav>
-    <div class="win">
-      <button type="button" id="btn-settings" title="Ajustes">⚙</button>
-      <button type="button" id="btn-min" title="Minimizar">–</button>
-      <button type="button" id="btn-max" title="Maximizar">□</button>
-      <button type="button" id="btn-close" class="close" title="Cerrar">×</button>
-    </div>
   </header>
 
   <section id="home-view">

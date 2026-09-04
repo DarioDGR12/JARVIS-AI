@@ -13,6 +13,7 @@ def test_repo_contains_tauri_app() -> None:
     assert 'id="home-view"' in html
     assert 'data-view="map"' in html
     assert 'data-view="vision"' in html
+    assert 'class="bar"' in html
     csp = (root / "desktop" / "src-tauri" / "tauri.conf.json").read_text()
     assert "ws://127.0.0.1:*" in csp
 

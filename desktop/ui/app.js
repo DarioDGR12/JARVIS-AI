@@ -128,9 +128,6 @@
       || ev.type === "auth.challenge" || ev.type === "auth.result" || ev.type === "hud.ready") {
       refreshHud();
     }
-    if (ev.type === "assistant.text" && ev.payload && ev.payload.text && ev.payload.via === "phrase-map") {
-      if (currentView === "chat") add("jarvis", ev.payload.text);
-    }
   }
 
   async function refreshHud() {
