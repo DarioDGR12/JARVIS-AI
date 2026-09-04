@@ -28,6 +28,7 @@ def test_console_and_chat() -> None:
     page = client.get("/")
     assert page.status_code == 200
     assert "JARVIS" in page.text
+    assert "Silencio" in page.text
     status = client.get("/api/status")
     assert status.status_code == 200
     chat = client.post("/api/chat", json={"message": "hola"})

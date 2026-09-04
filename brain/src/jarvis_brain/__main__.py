@@ -14,8 +14,13 @@ from jarvis_brain.bus.server import EventBus
 from jarvis_brain.config import BrainConfig
 from jarvis_brain.hermes.client import HermesClient, HermesError
 from jarvis_brain.product.app import ProductRuntime, attach_product_routes
-from jarvis_brain.product.setup import apply_setup, load_product
-from jarvis_brain.product.start import ensure_demo_stack, hermes_up
+from jarvis_brain.product.setup import apply_setup, ensure_product_configured, load_product
+from jarvis_brain.product.start import (
+    console_already_up,
+    ensure_stack,
+    hermes_up,
+    port_in_use,
+)
 from jarvis_brain.turn import run_text_turn, speak_reply
 from jarvis_brain.voice.config import VoiceConfig
 from jarvis_brain.voice.tts import LocalTTS
@@ -53,12 +58,14 @@ def _brain_root() -> Path:
 
 
 async def _chat(args: argparse.Namespace) -> int:
+    ensure_product_configured()
+    _apply_saved_product()
     cfg = BrainConfig.from_env()
     bus = EventBus()
     hermes = HermesClient(cfg)
     tts = None if args.no_speak else _load_tts(required=bool(args.wav))
     try:
-        ensure_demo_stack(_brain_root(), cfg.hermes_api_key)
+        ensure_stack(_brain_root(), cfg.hermes_api_key)
     except RuntimeError as exc:
         log.warning("%s", exc)
     server: asyncio.Task[None] | None = None
@@ -198,9 +205,26 @@ async def _serve_http(
 
 
 async def _start() -> int:
+    product, created = ensure_product_configured()
+    if created:
+        print(
+            "No setup yet. Starting in demo (local mock, no cloud key).\n"
+            "Your model: jarvis setup --provider openai --api-key \"$OPENAI_API_KEY\"",
+            flush=True,
+        )
+    _apply_saved_product()
     cfg = BrainConfig.from_env()
+    if console_already_up(cfg.bus_port):
+        print(f"JARVIS already running at http://127.0.0.1:{cfg.bus_port}/", flush=True)
+        return 0
+    if port_in_use(cfg.bus_port):
+        print(
+            f"Port {cfg.bus_port} is already in use by another process.",
+            file=sys.stderr,
+        )
+        return 1
     try:
-        ensure_demo_stack(_brain_root(), cfg.hermes_api_key)
+        ensure_stack(_brain_root(), cfg.hermes_api_key)
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -210,7 +234,11 @@ async def _start() -> int:
     try:
         await hermes.ping()
         session_id = await hermes.ensure_session()
-        print(f"Console http://127.0.0.1:{cfg.bus_port}/", flush=True)
+        print(
+            f"JARVIS · {product.mode} · {product.provider} · {product.model}",
+            flush=True,
+        )
+        print(f"Open http://127.0.0.1:{cfg.bus_port}/", flush=True)
         await _serve_http(cfg, bus, hermes, tts, session_id)
     except HermesError as exc:
         print(f"Hermes error: {exc}", file=sys.stderr)
@@ -247,9 +275,7 @@ def _cmd_setup(args: argparse.Namespace) -> int:
         return 2
     print(f"Configured {product.mode} · {product.provider} · {product.model}", flush=True)
     print("Key stored in ~/.hermes/.env (not in the repo).", flush=True)
-    print("Restart: python3 -m jarvis_brain start", flush=True)
-    if product.mode == "byok":
-        print("If Hermes was already running, restart it so it picks up the new provider.", flush=True)
+    print("Start the product: jarvis start", flush=True)
     return 0
 
 

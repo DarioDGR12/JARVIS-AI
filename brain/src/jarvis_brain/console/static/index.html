@@ -28,11 +28,13 @@
     .you { align-self: flex-end; background: var(--you); border: 1px solid var(--line); }
     .jarvis { align-self: flex-start; background: var(--me); border-left: 2px solid var(--gold); }
     .err { color: #e07a7a; }
-    form { display: flex; gap: 8px; margin-top: 12px; }
+    form { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
     input, button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); padding: 10px 12px; }
     input { flex: 1; }
     button { color: var(--gold); cursor: pointer; letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; }
     button:disabled { opacity: 0.4; cursor: wait; }
+    label.mute { color: var(--mute); font-size: 12px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+    .hint { color: var(--mute); font-size: 13px; padding: 24px 8px; }
   </style>
 </head>
 <body>
@@ -40,9 +42,10 @@
     <h1>JARVIS</h1>
     <div id="meta">conectando…</div>
   </header>
-  <div id="log"></div>
+  <div id="log"><div class="hint" id="hint">Escribe. JARVIS responde y habla en este equipo.</div></div>
   <form id="f">
     <input id="q" autocomplete="off" placeholder="Escribe. Enter envía." />
+    <label class="mute"><input type="checkbox" id="mute" /> Silencio</label>
     <button type="submit">Enviar</button>
   </form>
   <script>
@@ -50,9 +53,12 @@
     const meta = document.getElementById("meta");
     const form = document.getElementById("f");
     const q = document.getElementById("q");
+    const mute = document.getElementById("mute");
     const btn = form.querySelector("button");
 
     function add(cls, text) {
+      const hint = document.getElementById("hint");
+      if (hint) hint.remove();
       const el = document.createElement("div");
       el.className = "msg " + cls;
       el.textContent = text;
@@ -88,7 +94,7 @@
         const data = await r.json();
         if (!data.ok) throw new Error(data.error || r.statusText);
         add("jarvis", data.reply || "(sin texto)");
-        if (data.audio_wav_b64) {
+        if (data.audio_wav_b64 && !mute.checked) {
           const src = "data:audio/wav;base64," + data.audio_wav_b64;
           const audio = new Audio(src);
           audio.play().catch(() => {});

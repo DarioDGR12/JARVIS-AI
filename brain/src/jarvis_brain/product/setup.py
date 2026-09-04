@@ -135,6 +135,17 @@ def _write_hermes(
     cfg_path.chmod(0o600)
 
 
+def ensure_product_configured() -> tuple[ProductConfig, bool]:
+    """Load product.yaml, or write demo config on first run.
+
+    Returns (config, created) so the CLI can tell the user what happened.
+    """
+    existing = load_product()
+    if existing:
+        return existing, False
+    return apply_setup(provider="demo", api_key="sk-local"), True
+
+
 def public_status(product: ProductConfig | None) -> dict:
     if product is None:
         return {"configured": False, "mode": "unset", "provider": None, "model": None}
