@@ -28,12 +28,12 @@
     .you { align-self: flex-end; background: var(--you); border: 1px solid var(--line); }
     .jarvis { align-self: flex-start; background: var(--me); border-left: 2px solid var(--gold); }
     .err { color: #e07a7a; }
-    form { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+    form { display: flex; gap: 8px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
     input, button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); padding: 10px 12px; }
-    input { flex: 1; }
-    button { color: var(--gold); cursor: pointer; letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; }
+    input { flex: 1 1 180px; min-width: 0; }
+    button { color: var(--gold); cursor: pointer; letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; flex: 0 0 auto; }
     button:disabled { opacity: 0.4; cursor: wait; }
-    label.mute { color: var(--mute); font-size: 12px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+    label.mute { color: var(--mute); font-size: 12px; display: flex; gap: 6px; align-items: center; white-space: nowrap; flex: 0 0 auto; }
     .hint { color: var(--mute); font-size: 13px; padding: 24px 8px; }
   </style>
 </head>
