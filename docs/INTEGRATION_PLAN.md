@@ -6,8 +6,8 @@
 **Plataforma objetivo:** Pop!_OS (COSMIC / GNOME, Linux, Wayland)  
 **Enfoque:** BYOK + system prompt. No se entrena ningún modelo. Se orquesta.
 
-Este documento es el entregable de cinco agentes especializados más un coordinador.  
-**No copies código** de repos sin licencia o GPL al árbol. Ver [§7 Licencias](#7-licencias-qué-se-puede-copiar).
+Este documento es el entregable de seis agentes especializados (más Howdy como capa del cerebro) y un coordinador.  
+**No copies código** de repos sin licencia, GPL o AGPL al árbol. Ver [§7 Licencias](#7-licencias-qué-se-puede-copiar).
 
 ---
 
@@ -23,6 +23,8 @@ Este documento es el entregable de cinco agentes especializados más un coordina
 | Domótica | Home Assistant **fuera** del monorepo. Cliente LAN: Long-Lived Token + REST + WebSocket |
 | Personalidad | Un modelo, dos overlays. IDs en código: `jarvis` / `companion` (no usar “Cortana” como identificador) |
 | Transporte | WebSocket JSON `ws://127.0.0.1:<port>/ws/bus` + canal de voz PCM aparte |
+| Auth facial (Howdy) | **Capa del cerebro**, no módulo aparte. Howdy es binario del SO (`compare.py`). Antes de HA write / fs write / shell: `auth.challenge` → cara → cache TTL 5 min. Sin switch manual |
+| Vigilancia (Agente 6) | Adaptador + **YOLO26n headless** (skill de DeepCamera). Corre en paralelo, **avisa solo**. Face rec / Aegis / VLM / Shinobi **apagados**. Eventos `surveillance.*` |
 
 Si esto te encaja, el siguiente paso (cuando lo apruebes) es Fase 1: bus de eventos + cerebro + Hermes, sin HUD todavía.
 
@@ -164,6 +166,41 @@ APIs oficiales (verificadas):
 
 Control = `POST /api/services/{domain}/{service}`. **Nunca** `POST /api/states` (no habla con el dispositivo).
 
+### 1.9 boltgolt/howdy — auth facial (capa del cerebro, no app)
+
+| Campo | Valor |
+|---|---|
+| URL | https://github.com/boltgolt/howdy |
+| Stack | **Python** + PAM (3.0: `pam_howdy.so` C++). dlib embeddings 128-D + OpenCV **V4L2**. No PipeWire |
+| Verify real | `python3 <compare.py> <username>` — **no existe** `howdy verify` ni `--json` |
+| Licencia | **MIT** |
+| Último push | 2025-07-29. `master` = **3.0.0 BETA**. Release GitHub = **v2.6.1** (2020-09-02) |
+| Stars / issues | 7744 / 352 |
+| Encaje Pop!_OS | System76 documenta el PPA → **2.6.1**. IR preferido, RGB funciona. Mid-session sí (PAM ya lo usa en sudo/lock) |
+
+**Sirve:** el mismo `compare.py` que usa PAM, disparado por el cerebro. Enroll una vez: `sudo howdy add`.
+
+**No sirve:** `howdy test` (ventana OpenCV + sudo + Wayland), howdy-gtk, vender liveness (Howdy **admite spoof por foto**). No vendorize: es paquete del SO.
+
+**Exit codes verificados en `compare.py`:** 0 match, 10 sin modelo, 11 timeout, 12 abort, 13 oscuro. CLI real: `add|clear|config|disable|list|remove|set|snapshot|test|version`.
+
+### 1.10 Alanbk101/deepcamera — vigilancia (Agente 6, adaptador)
+
+| Campo | Valor |
+|---|---|
+| URL | https://github.com/Alanbk101/deepcamera |
+| Qué es | Fork de **SharpAI/DeepCamera** (3039★). Este fork: **0★**, 86 commits detrás, issues off, push 2026-03-21 |
+| Stack útil | Skill `yolo-detection-2026/scripts/detect.py`: JSONL stdin/stdout, `ultralytics` YOLO26n, torch. **No es un daemon de alertas** |
+| VLM (Qwen/SmolVLM) | El README los vende. En este repo **no hay pesos ni loader**. Viven en Aegis (app **cerrada**, Mac-céntrica) |
+| Alertas outbound | **No autónomas.** webhook/MQTT/HA son stubs “Planned” que reenvían stdin de Aegis |
+| Face rec | Solo stack **legacy** (FaceNet 2017 + Shinobi). YOLO26 no hace caras |
+| Licencia | Repo **MIT**. Runtime YOLO = **ultralytics AGPL-3.0**. Shinobi vendorizado = GPLv3 |
+| Encaje | Trackear **upstream SharpAI** o sincronizar el fork. v1 = solo `detect.py` + adaptador nuestro |
+
+**Sirve:** YOLO26n headless como proceso aparte. “Alguien en la puerta” = `person` + `camera_id=front_door`.
+
+**No sirve:** Aegis desktop, compose Milvus/Shinobi, face rec/ReID (choca con Howdy + S3 documentado), `screen_monitor` (choca con Agente 4), cloud VLM.
+
 ---
 
 ## 2. Cerebro principal vs módulos sueltos
@@ -222,6 +259,7 @@ JARVIS-AI/                          # Apache-2.0 (ya en el repo)
 │   │   ├── hermes/                 # cliente Sessions API
 │   │   ├── persona/                # clasificador + overlays
 │   │   ├── voice/                  # STT / TTS / wake
+│   │   ├── auth/                   # wrapper Howdy (spawn compare.py + cache TTL)
 │   │   └── tools/                  # plugins Hermes: hud, map, ha, vision
 │   └── pyproject.toml
 ├── hud/                            # JS (Vite) — REIMPLEMENTADO
@@ -234,7 +272,8 @@ JARVIS-AI/                          # Apache-2.0 (ya en el repo)
 ├── vision/                         # Python — captura de pantalla
 │   └── src/jarvis_vision/
 ├── adapters/
-│   └── homeassistant/              # cliente REST + WS
+│   ├── homeassistant/              # cliente REST + WS
+│   └── surveillance/               # Agente 6: RTSP/HA snapshot → YOLO stdin → bus
 ├── vendor/
 │   └── globe/                      # sentinel-feed-grid/src (MIT) + NOTICE
 ├── data/
@@ -244,7 +283,7 @@ JARVIS-AI/                          # Apache-2.0 (ya en el repo)
 │   ├── persona-jarvis.md
 │   └── persona-companion.md
 ├── deploy/
-│   ├── systemd/                    # brain, hud-static, vision
+│   ├── systemd/                    # brain, hud-static, vision, surveillance
 │   └── docker-compose.ha.yml       # opcional: imagen oficial HA
 ├── scripts/
 └── THIRD_PARTY_NOTICES.md
@@ -259,6 +298,8 @@ JARVIS-AI/                          # Apache-2.0 (ya en el repo)
 | Código de ProjectMidas | Sin licencia |
 | `home-assistant/core` | 876 MB, se corre aparte |
 | App React de WebcamMap | Solo el JSON filtrado |
+| Howdy (fuentes / pesos dlib) | Paquete del SO; el cerebro solo invoca `compare.py` |
+| DeepCamera / Shinobi / Aegis / ultralytics | YOLO corre **fuera** (AGPL). Adaptador nuestro no embebe YOLO |
 | Keys / `.env` | `HA_TOKEN`, keys LLM, ElevenLabs |
 
 **Dependencias por paquete (no se pisan)**
@@ -270,12 +311,14 @@ JARVIS-AI/                          # Apache-2.0 (ya en el repo)
 | `vendor/globe` | iframe estático | No | YouTube, DOT, tiles de textura |
 | `vision` | Python | No (el cerebro decide si hay VLM) | No, salvo que el cerebro pida VLM |
 | `adapters/ha` | Python | No | Solo `HA_URL` LAN |
+| `brain/auth` | Python | No | No. Llama Howdy local (V4L2) |
+| `adapters/surveillance` | Python | No | RTSP LAN de **tus** cámaras. YOLO en proceso hijo |
 
 ---
 
 ## 4. Contrato del bus (coordinado)
 
-Los cinco agentes propusieron eventos. El coordinador **unificó** nombres y payloads. Esto es la fuente de verdad. Si un agente decía otra cosa, gana esta sección.
+Los agentes propusieron eventos. El coordinador **unificó** nombres y payloads. Esto es la fuente de verdad. Si un agente decía otra cosa, gana esta sección.
 
 ### 4.1 Envelope
 
@@ -284,7 +327,7 @@ Los cinco agentes propusieron eventos. El coordinador **unificó** nombres y pay
   "v": 1,
   "id": "01J7QK3...",
   "ts": "2026-09-04T05:35:00.123Z",
-  "source": "brain|hud|map|vision|ha|voice|system",
+  "source": "brain|hud|map|vision|ha|voice|system|auth|surveillance",
   "type": "hud.display",
   "corr_id": null,
   "payload": {}
@@ -306,6 +349,9 @@ Los cinco agentes propusieron eventos. El coordinador **unificó** nombres y pay
 | `hud.display` | A1: `media/src/title` (eadmin2) | A2: `type/content/duration` | Unión: `kind` + `content` + campos media opcionales. **No** usar `type` dentro del payload (choca con `envelope.type`) |
 | `hud.set_mode` | A1: operacional + `persona` | A2: `{ visual: jarvis\|companion }` | Ambos: `operational` + `visual` |
 | Vista del globo | A2: `view: "map"` | A3: `view: "globe"` | **`map`** (contrato original) |
+| Howdy API | Tentación de `howdy verify --json` | CLI real: `compare.py` + exit codes | **No inventar JSON de Howdy** |
+| DeepCamera alertas | README: MQTT/Telegram/VLM | Código: YOLO JSONL; stubs Planned | Adaptador **conduce** `detect.py` |
+| Vista alerta | A6: `hud.show_view vision\|home` | `vision` = pantalla | Snapshot vía `hud.display` media. **No** abrir globo ni visión de pantalla |
 | Gestos | A1 listó swipe/hold | A2: solo pinch/spread existen | **`pinch` \| `spread`** al inicio |
 | `vision` timestamp | A1: `ts` | A4: `timestamp` epoch + `source` | Payload: `timestamp` epoch ms de la captura + `source: "screen"`. El `ts` del envelope es el del evento |
 | Modo cálido | “cortana” en prosa | — | Código/eventos: **`companion`**. Prosa de producto: “modo compañero”. Evita marca Cortana en OSS |
@@ -459,26 +505,135 @@ HA corre aparte. El adaptador traduce eventos ↔ HTTP/WS.
 - REST = verbos; WS = estados en vivo. v0 puede ser solo REST.  
 - **100% local** solo si HA **y** los dispositivos están en LAN. Una bombilla Tuya-cloud no se vuelve local por usar la API de HA.  
 - No iframe de HA en el HUD salvo opcional a `HA_URL` (sin token en la URL).  
-- No forkar core, no custom_components, no Supervisor API.
+- No forkar core, no custom_components, no Supervisor API.  
+- **Writes HA pasan por Howdy** (§4.8). Lecturas (`ha.state`) son public.
 
 ### 4.7 Flujo de un turno
 
 ```
 voice.wake | hud.click | hud.gesture
     → STT → voice.transcript
-    → snapshot: vision.screen_context + ha.state + map.selection + system.stats + hora
-    → phrase-map (volumen/lock) ──hit──► hud.speak corto, sin Hermes
+    → snapshot: vision.screen_context + ha.state + map.selection
+                + surveillance.status + system.stats + hora
+    → phrase-map (volumen / lock pantalla) ──hit──► hud.speak corto, sin Hermes
+         (lock = public; unlock / HA write / shell = sensitive)
     → PersonaClassifier → overlay jarvis|companion
     → Hermes chat/stream { input, instructions: overlay }
          ├ tool hud_*     → hud.display / hud.show_view / hud.highlight
          ├ tool map_*     → map.focus / map.show_feeds / map.query
-         ├ tool ha_*      → ha.command
-         └ tool vision_*  → vision.capture / vision.watch
+         ├ tool ha_*      → [auth gate] → ha.command
+         ├ tool fs_* / shell_* → [auth gate]
+         ├ tool vision_*  → vision.capture (public) / vision.watch (sensitive)
+         └ tool surv_*    → surveillance.arm
     → assistant.delta → hud.speak + TTS PCM
     → persona.changed / hud.set_mode
 ```
 
+**Fuera de turno (paralelo):** Agente 6 → `surveillance.alert` → HUD + voz, sin que preguntes.
+
 Una sesión Hermes (`jarvis-main`). **No** dos sesiones (rompería la memoria).
+
+### 4.8 Howdy — capa de verificación (no módulo manual)
+
+Howdy **no** es una vista ni un switch. El cerebro clasifica el tool y, si es `sensitive` y no hay sesión facial viva, dispara el challenge **solo**.
+
+```
+tool sensitive
+  ├ cache auth OK y now < expiry  → ejecutar
+  └ miss / expired
+        → auth.challenge
+        → hud.display { kind: "alert", content: "LOOK AT CAMERA" }
+        → hud.camera { hold: true }     // suelta V4L2 si Howdy comparte RGB
+        → spawn: python3 compare.py $USER
+        ├ exit 0 → auth.result ok → cache ttl_s=300 → hud.camera hold:false → ejecutar
+        └ 10/11/12/13/timeout/cancel
+              → auth.result fail → NO ejecutar
+              → voz JARVIS seca + hud.display alert
+              → hud.camera hold:false
+```
+
+**Eventos**
+
+| type | dirección | payload |
+|---|---|---|
+| `auth.challenge` | brain → wrapper | `{ reason: "ha.command"\|"fs.write"\|"shell"\|"vision.watch", tool, ttl_s }` |
+| `auth.result` | wrapper → brain | `{ ok, method: "howdy", confidence: null\|number, user, error, ttl_s, howdy_exit }` |
+| `auth.status` | wrapper → brain (boot + on change) | `{ enrolled, camera: "ir"\|"rgb"\|"missing", howdy_version }` |
+| `hud.camera` | brain → HUD | `{ hold: bool, reason: "auth.challenge" }` — **nuevo**. Pausa MediaPipe |
+
+`confidence` suele ser `null`: Howdy no emite JSON. `ok` = `howdy_exit == 0`.  
+`error` ∈ `{ none, no_model, timeout, too_dark, no_device, cancelled, abort }`.
+
+**Sensitive vs public**
+
+| Clase | Qué | Auth |
+|---|---|---|
+| sensitive | `ha.command` (writes), fs write, shell/terminal, `vision.watch` on, `surveillance.arm` off (desarmar) | Challenge si cache fría |
+| public | chat, mapa, lecturas HA, gestos, `vision.capture` once, `surveillance.alert` (entrada), volumen, lock pantalla | No |
+
+Desarmar cámaras es sensitive (alguien podría pedirlo de palabra). Armar puede ser public o sensitive — **sensitive** por consistencia.
+
+**Cámara: no pelear con el HUD**
+
+| Hardware | Política |
+|---|---|
+| IR + RGB | Howdy usa **solo IR** (`/dev/v4l/by-path/…`). HUD se queda la RGB. Cero contención |
+| Solo RGB | Cerebro manda `hud.camera hold:true` → Howdy abre V4L2 exclusive → cierra → `hold:false` |
+| DeepCamera / pantalla | RTSP de la casa / portal Screenshot. **No** `/dev/video` del laptop |
+
+Howdy no habla PipeWire. Device estable por `by-path`, no `/dev/video0`. RGB: `certainty` **más bajo** (escala Howdy: menor = más estricto). No hay liveness: una foto puede bastar (el README lo dice). IR ayuda, no es magia.
+
+**Privilegios:** CLI Howdy = root (solo enroll/setup, una vez). `compare.py` no exige root si los modelos son legibles y el user está en `video`. Si modelos son 600 root: sudoers **mínimo** NOPASSWD al path fijo. El cerebro **no** llama `howdy add/clear`.
+
+**Enroll:** `sudo howdy add` en setup de Pop!_OS. Si `auth.status.enrolled=false`, los sensitive fallan cerrado.
+
+### 4.9 Agente 6 — vigilancia (avisa solo)
+
+DeepCamera **no** se embebe. El adaptador alimenta `detect.py` (JSONL) y **sintetiza** alertas. YOLO no emite `alert`; emite `detections` por frame.
+
+```
+[RTSP puerta / snapshot HA]
+        → adapters/surveillance
+        → stdin detect.py (YOLO26n, proceso aparte, AGPL)
+        → stdout detections
+        → debounce (60–120 s por camera_id+label) + armed + conf ≥ 0.8
+        → surveillance.alert
+        → cerebro:
+             hud.set_mode { operational: "alert" }
+             hud.display { kind: "alert"|"media", content, src?: snapshot_ref }
+             hud.speak "Hay alguien en la puerta."
+             NO map.*  NO vision.screen_context
+             ha.command luz porche SOLO si Howdy OK (write)
+             cerradura = otro intent + Howdy. La alerta no autoriza unlock
+```
+
+**Eventos**
+
+| type | dirección | payload |
+|---|---|---|
+| `surveillance.alert` | A6 → brain | `{ camera_id, label, confidence, zone?, snapshot_ref?, ts, severity: "info"\|"warn"\|"critical", bbox? }` |
+| `surveillance.status` | A6 → brain | `{ cameras: [{id,name,online}], models, armed, backend }` |
+| `surveillance.arm` | brain → A6 | `{ enabled: bool }` — YOLO **sigue** corriendo; el adaptador deja de emitir `alert` |
+
+“Alguien en la puerta” = `camera_id=front_door` + `label=person`. DeepCamera no tiene zonas; `zone` lo pone el adaptador.
+
+**Cuatro cámaras, cuatro mundos (no mezclar)**
+
+| Superficie | Hardware | Eventos |
+|---|---|---|
+| Gestos HUD | Webcam laptop + MediaPipe | `hud.gesture` |
+| Auth Howdy | IR (o RGB en hold) | `auth.*` |
+| Vigilancia casa | RTSP / ONVIF **tuyas** | `surveillance.*` |
+| Globo mundial | Webcams públicas | `map.*` |
+| Pantalla | xdg-desktop-portal | `vision.screen_context` |
+
+**Howdy vs face rec de DeepCamera:** preguntas distintas. Howdy = “¿eres el dueño para un write?”. DeepCamera face rec = “¿quién aparece en la cam?”. **No compartir templates. Face rec / ReID apagados** (FaceNet 2017, S3 documentado, contradice Howdy). v1 no necesita saber *quién*; basta `person`.
+
+**Hardware v1:** mismo Pop!_OS, YOLO26n (~6 MB + torch). CPU vale a 1–5 FPS para 1 cámara de puerta. Qwen/SmolVLM **no** en v1 (pelean GPU con Hermes + HUD). NVR aparte solo si hay 4+ cams 24/7.
+
+**Privacidad:** snapshots de alerta en disco local, retención 24–72 h, no NVR continuo por default, no cloud VLM, no Telegram del stack legacy. Primer download de `yolo26n.pt` es de Ultralytics; runtime local.
+
+**Fork:** implementar contra el skill de **SharpAI/DeepCamera** (o un fork sincronizado). Alanbk101 está 86 commits atrás.
 
 ---
 
@@ -526,8 +681,10 @@ eadmin2 `main` **no** cablea `hermes.instructions`. Es el primer parche del cere
 | Globo | estáticos same-origin `/globe/` dentro del HUD |
 | Visión | servicio Python + portal COSMIC/GNOME |
 | HA | Docker `network_mode: host` en el mismo PC **o** HAOS en otra máquina. UI `:8123` |
+| Howdy | Paquete PPA 2.6.1 o build 3.0. Enroll una vez. Wrapper en el cerebro |
+| Agente 6 | systemd: adaptador + hijo `detect.py`. RTSP LAN. GPU opcional |
 
-Cámara: PipeWire + `xdg-desktop-portal`. Una sola app (el HUD) posee el device.
+Cámaras: HUD = RGB laptop (PipeWire). Howdy = IR dedicado o RGB en `hold`. Vigilancia = RTSP de la casa. No compartir un `getUserMedia` entre los tres.
 
 Audio: PipeWire. El client de wake word de eadmin2 hay que portar a Linux (issue #4 ya lo intentó en Ubuntu, no está en `main`).
 
@@ -549,6 +706,10 @@ El monorepo ya es **Apache-2.0**. Una guía de pago sobre código Apache/MIT es 
 | openmagicpointer | MIT | Ideas + patrones; no el binario Windows |
 | ProjectMidas | **Ninguna** | Ideas only |
 | home-assistant/core | Apache-2.0 | Cliente nuevo; no fork |
+| boltgolt/howdy | MIT | **No vendor.** apt/PPA; wrapper llama `compare.py` |
+| Alanbk101 / SharpAI DeepCamera | MIT el repo | Adaptador nuestro. Skill YOLO = proceso hijo |
+| ultralytics (YOLO26) | **AGPL-3.0** | **No embeber** en el binario JARVIS. Proceso aparte, como HA |
+| Shinobi (dentro de DeepCamera) | GPLv3 | No usar |
 | Three.js / hls.js | MIT / Apache-2.0 | Vendor pineado (no CDN `latest`) |
 
 ---
@@ -559,10 +720,12 @@ El monorepo ya es **Apache-2.0**. Una guía de pago sobre código Apache/MIT es 
 2. **Voz local:** STT + Piper + openWakeWord. Phrase-map.  
 3. **HUD reimplementado** + WS + gestos pinch/spread + `hud.ready`. Chromium kiosk.  
 4. **Vista `map`:** vendor SENTINEL + bridge `postMessage` + adaptador WebcamMap (extracto).  
-5. **HA adapter** + tool Hermes `ha_*` + discovery.  
-6. **Visión:** portal Screenshot + OCR opt-in + fingerprint. Watch off por default.  
-7. **PersonaClassifier** + overlays + `persona.changed`.  
-8. Docs de la guía (setup Pop!_OS, BYOK, HA, avisos legales).
+5. **HA adapter** + tool Hermes `ha_*` + discovery. Writes detrás de Howdy.  
+6. **Howdy:** wrapper `compare.py` + `hud.camera hold` + cache TTL. Setup: `sudo howdy add`.  
+7. **Visión:** portal Screenshot + OCR opt-in + fingerprint. Watch off por default (sensitive).  
+8. **Agente 6:** YOLO26n + 1 cámara puerta + debounce + `surveillance.alert`. Sin face rec / VLM.  
+9. **PersonaClassifier** + overlays + `persona.changed`.  
+10. Docs de la guía (setup Pop!_OS, BYOK, HA, Howdy, cámaras, avisos legales + AGPL).
 
 ---
 
@@ -577,7 +740,12 @@ El monorepo ya es **Apache-2.0**. Una guía de pago sobre código Apache/MIT es 
 7. Dos WebGL (HUD + iframe) + MediaPipe + 9 HLS = el cuello es decode de video. Unmount **debe** destruir el iframe.  
 8. jarvis-hud / Midas sin licencia: tentación de “copiar y listo” = riesgo legal.  
 9. Token HA a 10 años = control total de la casa si se filtra.  
-10. Prompt injection desde OCR/pantalla: el cerebro debe tratar ese texto como untrusted.
+10. Prompt injection desde OCR/pantalla: el cerebro debe tratar ese texto como untrusted.  
+11. Howdy: spoof por foto (sobre todo RGB); PPA 2.6.1 vs master 3.0 (paths distintos, misma interfaz `compare.py`); IPU6/libcamera puede no exponer V4L2.  
+12. DeepCamera no avisa solo: sin adaptador que alimente YOLO, no hay alertas. Aegis no es un daemon Linux.  
+13. ultralytics AGPL: si se linkea dentro de JARVIS, contagia. Proceso hijo obligatorio.  
+14. Spam YOLO 5 FPS sin debounce. Falsos positivos si la cam ve la calle (no hay zonas nativas).  
+15. Face rec legacy + Howdy = identidades contradictorias. Dejar face rec off.
 
 ---
 
@@ -615,6 +783,21 @@ Ningún agente implementó código. Cada uno clonó/leyó y corrigió supuestos 
 - 100% local solo si HA y dispositivos están en LAN.  
 - No clonar core. Cliente nuevo Apache-compatible.
 
+### Howdy (capa del cerebro)
+
+- CLI verificada en `cli.py`: no existe `verify`. Verify = `compare.py` + exit 0/10–13.  
+- IR no es obligatorio; liveness no existe. Mid-session sí.  
+- Howdy no habla con el HUD; el cerebro manda `hud.display` + `hud.camera`.  
+- MIT, no vendor. Plantillas en `/etc/howdy/models` (3.0) o `/lib/security/howdy/models` (2.6.1).
+
+### Agente 6 — Vigilancia
+
+- Fork Alanbk101 = 0★, 86 commits atrás; skill útil = `detect.py` JSONL.  
+- Qwen/SmolVLM **no están en el repo**. webhook/MQTT = stubs.  
+- El adaptador **conduce** YOLO; no hay API de alertas que pollar.  
+- Eventos solo `surveillance.*`. No pisa `vision.*` ni `map.*`.  
+- AGPL de ultralytics → proceso aparte. Face rec apagado.
+
 ### Coordinador — QA cruzado
 
 Verifiqué yo (no solo los informes):
@@ -627,14 +810,19 @@ Verifiqué yo (no solo los informes):
 - `openmagicpointer/LICENSE` MIT. `ProjectMidas/LICENSE` **MISSING**.  
 - Stats GitHub propias coinciden con los agentes (salvo WebcamMap `open_issues`: API = **6**, agente 3 reportó 3 — GitHub mezcla PRs; dejo 6).  
 - Unifiqué envelope, `hud.display.kind`, `hud.set_mode`, vista `map` (no `globe`), gestos, `vision.source`, id de persona `companion`.  
-- El workspace `JARVIS-AI` hoy solo tiene README stub + LICENSE Apache-2.0. Cero handlers `map.*` / `hud.*` que romper.
+- Howdy: `cli.py` choices sin `verify`; `compare.py` exit 0/10/11/12/13. `LICENSE` MIT.  
+- DeepCamera: `detect.py` documenta JSONL frame→detections. `gh`: fork de SharpAI, 0 stars, sin releases.  
+- Añadí `hud.camera` (hold) para no inventar `howdy verify --json`. Añadí `source: auth|surveillance`.  
+- El workspace `JARVIS-AI` hoy solo tiene README + plan. Cero handlers que romper.
 
 **Incompatibilidades residuales (conscientes, no bugs):**
 
 - eadmin2 hoy habla `summon_panel` / `agent_status` / PCM. El cerebro **traduce** a `hud.*` — capa adapter, no se pide que eadmin2 ya cumpla el envelope.  
 - SENTINEL no exporta focus/query hasta el bridge.  
 - Visión no corre en Pop!_OS hasta el portal.  
-- `instructions` de Hermes: NO VERIFICADO.
+- `instructions` de Hermes: NO VERIFICADO.  
+- Howdy 2.6.1 vs 3.0: el wrapper resuelve `COMPARE_PROCESS_PATH`.  
+- DeepCamera no emite `surveillance.alert`; el adaptador lo sintetiza.
 
 ---
 
@@ -647,6 +835,8 @@ Verifiqué yo (no solo los informes):
 5. HA = cliente LAN, core fuera.  
 6. Monorepo y envelope de §3–§4.  
 7. Persona automática `jarvis` / `companion` sin switch manual.  
-8. **No escribir código de producto** hasta que digas que sí.
+8. Howdy = capa automática del cerebro (`compare.py` + TTL). No módulo que actives a mano.  
+9. Agente 6 = YOLO26n + adaptador que **avisa solo**. Face rec / Aegis / VLM fuera de v1.  
+10. **No escribir código de producto** hasta que digas que sí.
 
 Cuando apruebes (o ajustes un punto), se implementa Fase 1.
