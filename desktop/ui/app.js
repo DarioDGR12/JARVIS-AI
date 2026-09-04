@@ -6,10 +6,13 @@
   const mute = document.getElementById("mute");
   const btn = form.querySelector("button");
   const views = {
+    home: document.getElementById("home-view"),
     chat: document.getElementById("chat-view"),
     settings: document.getElementById("settings-view"),
     system: document.getElementById("system-view"),
     ha: document.getElementById("ha-view"),
+    map: document.getElementById("map-view"),
+    vision: document.getElementById("vision-view"),
   };
   const setupForm = document.getElementById("setup");
   const setupMsg = document.getElementById("setup-msg");
@@ -18,6 +21,8 @@
   const baseRow = document.getElementById("base-row");
 
   const BRAIN = "http://127.0.0.1:8765";
+  let currentView = "home";
+  let busSocket = null;
 
   function tauri() {
     return window.__TAURI__ || null;
@@ -45,10 +50,39 @@
     log.scrollTop = log.scrollHeight;
   }
 
-  function showView(name) {
+  function applyHud(hud) {
+    if (!hud) return;
+    const mode = hud.operational || "boot";
+    const visual = hud.visual || "jarvis";
+    document.body.dataset.mode = mode;
+    document.body.dataset.visual = visual;
+    document.body.dataset.view = hud.view || currentView;
+    document.getElementById("mode-chip").textContent = mode;
+    const ring = document.getElementById("ring");
+    ring.dataset.mode = mode;
+    document.getElementById("core-label").textContent = mode.toUpperCase();
+    document.getElementById("core-visual").textContent = visual.toUpperCase();
+    const card = hud.last_display;
+    document.getElementById("display-title").textContent = card && card.title ? String(card.title) : "en espera";
+    document.getElementById("display-body").textContent = card && card.content ? String(card.content) : "Sin eventos todavía.";
+    document.getElementById("speak-body").textContent =
+      hud.last_speak && hud.last_speak.text ? String(hud.last_speak.text) : "Silencio.";
+    const list = document.getElementById("toast-list");
+    list.replaceChildren();
+    (hud.toasts || []).slice(-6).forEach((toast) => {
+      const el = document.createElement("div");
+      el.className = "toast" + (toast.kind === "alert" ? " alert" : "");
+      el.textContent = (toast.title ? toast.title + " · " : "") + (toast.content || "");
+      list.appendChild(el);
+    });
+  }
+
+  function paintView(name) {
+    currentView = name;
     Object.entries(views).forEach(([key, el]) => {
       if (el) el.hidden = key !== name;
     });
+    document.body.dataset.view = name;
     document.querySelectorAll("#nav button").forEach((b) => {
       b.classList.toggle("on", b.dataset.view === name);
     });
@@ -56,10 +90,78 @@
     if (name === "ha") loadHa();
   }
 
+  async function showView(name, opts) {
+    const remote = opts && opts.remote;
+    if (!views[name]) return;
+    paintView(name);
+    if (remote) return;
+    try {
+      const base = await brainUrl();
+      await fetch(base + "/api/hud/view", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ view: name }),
+      });
+      await fetch(base + "/api/hud/click", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target: "nav", id: name, method: "pointer" }),
+      });
+    } catch (err) {
+      console.error("hud view", err);
+    }
+  }
+
   function syncProviderFields() {
     const id = providerEl.value;
     keyRow.hidden = id === "demo";
     baseRow.hidden = id !== "custom";
+  }
+
+  function handleBusEvent(ev) {
+    if (!ev || !ev.type) return;
+    if (ev.type === "hud.show_view" && ev.payload && ev.payload.view) {
+      paintView(ev.payload.view);
+    }
+    if (ev.type === "hud.set_mode" || ev.type === "hud.display" || ev.type === "hud.speak"
+      || ev.type === "hud.highlight" || ev.type === "brain.status" || ev.type === "persona.changed"
+      || ev.type === "auth.challenge" || ev.type === "auth.result" || ev.type === "hud.ready") {
+      refreshHud();
+    }
+    if (ev.type === "assistant.text" && ev.payload && ev.payload.text && ev.payload.via === "phrase-map") {
+      if (currentView === "chat") add("jarvis", ev.payload.text);
+    }
+  }
+
+  async function refreshHud() {
+    try {
+      const base = await brainUrl();
+      const hud = await fetch(base + "/api/hud").then((r) => r.json());
+      applyHud(hud);
+    } catch (err) {
+      console.error("hud", err);
+    }
+  }
+
+  async function connectBus(base) {
+    const wsUrl = base.replace(/^http/, "ws") + "/ws/bus";
+    if (busSocket && busSocket.readyState < 2) return;
+    try {
+      const ws = new WebSocket(wsUrl);
+      busSocket = ws;
+      ws.onmessage = (msg) => {
+        try {
+          handleBusEvent(JSON.parse(msg.data));
+        } catch {
+          /* ignore malformed bus frames */
+        }
+      };
+      ws.onclose = () => {
+        if (busSocket === ws) busSocket = null;
+      };
+    } catch (err) {
+      console.error("bus", err);
+    }
   }
 
   async function refresh() {
@@ -69,15 +171,35 @@
       const p = s.product || {};
       const mode = p.mode === "byok" ? "BYOK " + (p.provider || "") : (p.mode || "demo");
       const auth = s.auth && s.auth.enrolled ? "howdy" : "sin howdy";
+      const hud = s.hud || {};
       meta.textContent = (s.ok ? "en línea" : "Hermes caído") + " · " + mode
-        + (s.tts ? " · voz " + s.tts : " · sin voz") + " · " + auth;
+        + (s.tts ? " · voz " + s.tts : " · sin voz") + " · " + auth
+        + " · HUD " + (hud.operational || "?");
       if (p.provider) providerEl.value = p.provider;
       if (p.model) document.getElementById("model").value = p.model;
       if (p.base_url) document.getElementById("base-url").value = p.base_url;
       syncProviderFields();
+      applyHud(hud);
+      await connectBus(base);
     } catch (err) {
       meta.textContent = "cerebro no responde";
       console.error("status", err);
+    }
+  }
+
+  async function markReady() {
+    try {
+      const base = await brainUrl();
+      await fetch(base + "/api/hud/ready", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          camera: false,
+          viewport: { w: window.innerWidth, h: window.innerHeight },
+        }),
+      });
+    } catch (err) {
+      console.error("hud ready", err);
     }
   }
 
@@ -98,6 +220,7 @@
       const data = await r.json();
       if (!data.ok) throw new Error(data.error || r.statusText);
       add("jarvis", data.reply || "(sin texto)");
+      applyHud(data.hud);
       if (data.audio_wav_b64 && !mute.checked) {
         const audio = new Audio("data:audio/wav;base64," + data.audio_wav_b64);
         audio.play().catch(() => {});
@@ -167,9 +290,9 @@
         row.className = "entity";
         row.innerHTML = "<span>" + (ent.name || ent.entity_id) + "</span><span>" + (ent.state || "") + "</span>";
         if (String(ent.entity_id || "").startsWith("light.") || String(ent.entity_id || "").startsWith("switch.")) {
-          const btn = document.createElement("button");
-          btn.textContent = "toggle";
-          btn.onclick = async () => {
+          const toggle = document.createElement("button");
+          toggle.textContent = "toggle";
+          toggle.onclick = async () => {
             const domain = ent.entity_id.split(".")[0];
             const r = await fetch(base + "/api/ha/call", {
               method: "POST",
@@ -178,9 +301,10 @@
             });
             const data = await r.json();
             document.getElementById("ha-msg").textContent = data.ok ? "ok" : (data.error || "fail");
+            await refreshHud();
             loadHa();
           };
-          row.appendChild(btn);
+          row.appendChild(toggle);
         }
         box.appendChild(row);
       });
@@ -208,7 +332,7 @@
 
   providerEl.addEventListener("change", syncProviderFields);
   document.getElementById("btn-settings").addEventListener("click", () => showView("settings"));
-  document.getElementById("btn-back").addEventListener("click", () => showView("chat"));
+  document.getElementById("btn-back").addEventListener("click", () => showView("home"));
   document.querySelectorAll("#nav button").forEach((b) => {
     b.addEventListener("click", () => showView(b.dataset.view));
   });
@@ -223,6 +347,7 @@
   }
 
   wireWindow();
+  markReady();
   refresh();
   setInterval(refresh, 8000);
   q.focus();

@@ -6,14 +6,19 @@
   <title>JARVIS</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body data-mode="boot" data-visual="jarvis" data-view="home">
+  <div class="frame" aria-hidden="true"></div>
   <header id="titlebar" data-tauri-drag-region>
     <div class="brand" data-tauri-drag-region>JARVIS</div>
+    <div id="mode-chip">BOOT</div>
     <div id="meta">conectando…</div>
     <nav id="nav">
-      <button type="button" data-view="chat" class="on">Chat</button>
+      <button type="button" data-view="home" class="on">Inicio</button>
+      <button type="button" data-view="chat">Chat</button>
       <button type="button" data-view="system">Sistema</button>
       <button type="button" data-view="ha">Casa</button>
+      <button type="button" data-view="map">Mapa</button>
+      <button type="button" data-view="vision">Visión</button>
       <button type="button" data-view="settings">Ajustes</button>
     </nav>
     <div class="win">
@@ -24,7 +29,34 @@
     </div>
   </header>
 
-  <main id="chat-view">
+  <section id="home-view">
+    <div id="ring" data-mode="boot">
+      <div class="ring r1"></div>
+      <div class="ring r2"></div>
+      <div class="ring r3"></div>
+      <div class="core">
+        <div id="core-label">BOOT</div>
+        <div id="core-visual">JARVIS</div>
+      </div>
+    </div>
+    <aside id="hud-side">
+      <article id="last-display" class="panel">
+        <h3>Pantalla</h3>
+        <p id="display-title">en espera</p>
+        <p id="display-body">Sin eventos todavía.</p>
+      </article>
+      <article id="last-speak" class="panel">
+        <h3>Voz</h3>
+        <p id="speak-body">Silencio.</p>
+      </article>
+      <article id="toasts" class="panel">
+        <h3>Avisos</h3>
+        <div id="toast-list"></div>
+      </article>
+    </aside>
+  </section>
+
+  <main id="chat-view" hidden>
     <div id="log">
       <div class="hint" id="hint">Escribe. JARVIS responde y habla en este equipo.</div>
     </div>
@@ -53,6 +85,24 @@
     <div id="ha-states"></div>
   </section>
 
+  <section id="map-view" hidden>
+    <h2>Mapa</h2>
+    <p class="lead">Vista SENTINEL. El siguiente agente monta el globo en un iframe same-origin. Aquí no se copia WebcamMap ni se abren 10k cámaras.</p>
+    <div class="placeholder">
+      <div class="hex"></div>
+      <p>Globo en espera · agente 3</p>
+    </div>
+  </section>
+
+  <section id="vision-view" hidden>
+    <h2>Visión</h2>
+    <p class="lead">Pantalla, no webcam. Captura real = xdg-desktop-portal. Gestos de HUD van aparte.</p>
+    <div class="placeholder">
+      <div class="hex"></div>
+      <p>Visión de pantalla en espera · agente 4</p>
+    </div>
+  </section>
+
   <section id="settings-view" hidden>
     <h2>Ajustes</h2>
     <p class="lead">Tu key del modelo. No se sube a git. El cerebro no llama al proveedor: lo hace Hermes en local.</p>
@@ -77,7 +127,7 @@
       </label>
       <div class="row">
         <button type="submit">Guardar</button>
-        <button type="button" id="btn-back">Volver al chat</button>
+        <button type="button" id="btn-back">Volver al inicio</button>
       </div>
       <p id="setup-msg" class="msg-line"></p>
     </form>

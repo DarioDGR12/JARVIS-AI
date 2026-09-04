@@ -31,8 +31,12 @@ async def test_text_turn_publishes_and_joins() -> None:
     types = [e.type for e in seen]
     assert types[0] == "user.text"
     assert "assistant.delta" in types
-    assert types[-2] == "assistant.text"
-    assert seen[-1].payload["state"] == "idle"
+    assert "assistant.text" in types
+    assert "hud.set_mode" in types
+    idle = [e for e in seen if e.type == "brain.status" and e.payload.get("state") == "idle"]
+    assert idle
+    assert seen[-1].type == "hud.set_mode"
+    assert seen[-1].payload["operational"] == "standby"
 
 
 class _Engine:

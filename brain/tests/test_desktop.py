@@ -10,6 +10,11 @@ def test_repo_contains_tauri_app() -> None:
     html = (root / "desktop" / "ui" / "index.html").read_text()
     assert "JARVIS" in html
     assert "Ajustes" in html or "settings" in html
+    assert 'id="home-view"' in html
+    assert 'data-view="map"' in html
+    assert 'data-view="vision"' in html
+    csp = (root / "desktop" / "src-tauri" / "tauri.conf.json").read_text()
+    assert "ws://127.0.0.1:*" in csp
 
 
 def test_desktop_bin_honors_env(tmp_path: Path, monkeypatch) -> None:

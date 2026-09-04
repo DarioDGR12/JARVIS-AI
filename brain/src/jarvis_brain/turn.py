@@ -47,6 +47,21 @@ async def run_text_turn(
             source="cli",
         )
     )
+    await bus.publish(
+        new_event(
+            "hud.set_mode",
+            {"operational": "listening", "visual": persona},
+            source="brain",
+        )
+    )
+    if persona != "jarvis":
+        await bus.publish(
+            new_event(
+                "persona.changed",
+                {"from": "jarvis", "to": persona, "reason": ["warm"], "confidence": 0.7},
+                source="brain",
+            )
+        )
     hit = match_phrase(user_text)
     if hit:
         await bus.publish(
@@ -64,8 +79,29 @@ async def run_text_turn(
                 source="brain",
             )
         )
+        await bus.publish(
+            new_event(
+                "hud.display",
+                {"kind": "text", "content": reply, "title": hit.action},
+                source="brain",
+            )
+        )
         if tts and reply:
             await speak_reply(tts, bus, reply, voice=voice, session_id=session_id)
+        await bus.publish(
+            new_event(
+                "brain.status",
+                {"state": "idle", "session_id": session_id},
+                source="brain",
+            )
+        )
+        await bus.publish(
+            new_event(
+                "hud.set_mode",
+                {"operational": "standby", "visual": persona},
+                source="brain",
+            )
+        )
         return reply
 
     facts = memory.overlay_block(user_text) if memory else ""
@@ -125,6 +161,13 @@ async def run_text_turn(
         new_event(
             "brain.status",
             {"state": "idle", "session_id": session_id},
+            source="brain",
+        )
+    )
+    await bus.publish(
+        new_event(
+            "hud.set_mode",
+            {"operational": "standby", "visual": persona},
             source="brain",
         )
     )

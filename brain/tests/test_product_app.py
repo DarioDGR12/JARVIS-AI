@@ -44,11 +44,13 @@ def test_chat_and_status() -> None:
     status = client.get("/api/status")
     assert status.status_code == 200
     assert status.json()["ui"] == "desktop"
+    assert status.json()["hud"]["view"] == "home"
     chat = client.post("/api/chat", json={"message": "hola"})
     assert chat.status_code == 200
     body = chat.json()
     assert body["ok"] is True
     assert "hola" in body["reply"]
+    assert body["hud"]["operational"] == "standby"
 
 
 def test_cors_for_tauri() -> None:

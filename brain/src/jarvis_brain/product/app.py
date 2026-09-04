@@ -16,6 +16,7 @@ from jarvis_brain.bus.server import EventBus
 from jarvis_brain.config import BrainConfig
 from jarvis_brain.ha.client import HomeAssistant, load_ha_config, write_ha_config
 from jarvis_brain.hermes.client import HermesClient, HermesError
+from jarvis_brain.hud.state import HUD_VIEWS, HudState
 from jarvis_brain.memory.store import LocalMemory
 from jarvis_brain.product.providers import PROVIDERS
 from jarvis_brain.product.setup import apply_setup, load_product, public_status
@@ -42,6 +43,7 @@ class ProductRuntime:
         auth: AuthGate | None = None,
         memory: LocalMemory | None = None,
         ha: HomeAssistant | None = None,
+        hud: HudState | None = None,
     ) -> None:
         self.cfg = cfg
         self.bus = bus
@@ -52,7 +54,9 @@ class ProductRuntime:
         self.auth = auth or AuthGate()
         self.memory = memory
         self.ha = ha or HomeAssistant()
+        self.hud = hud or HudState()
         self.lock = asyncio.Lock()
+        self.bus.subscribe(self.hud.apply)
 
 
 def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
@@ -91,6 +95,7 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             "tts": runtime.tts.engine.name if runtime.tts and runtime.tts.engine else None,
             "ui": "desktop",
             "auth": runtime.auth.status().to_payload(),
+            "hud": runtime.hud.snapshot(),
             "ha": {"configured": runtime.ha.cfg.configured, "up": False},
             "bus": {
                 "clients": len(runtime.bus._clients),
@@ -175,8 +180,53 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
                 "session_id": runtime.session_id,
                 "audio_wav_b64": audio,
                 "tts": runtime.tts.engine.name if runtime.tts and runtime.tts.engine else None,
+                "hud": runtime.hud.snapshot(),
             }
         )
+
+    @app.get("/api/hud")
+    async def hud_state() -> dict:
+        return {"ok": True, **runtime.hud.snapshot()}
+
+    @app.post("/api/hud/view")
+    async def hud_view(body: dict) -> JSONResponse:
+        view = str((body or {}).get("view") or "")
+        if view not in HUD_VIEWS:
+            return JSONResponse({"ok": False, "error": f"unknown view {view}"}, status_code=400)
+        await runtime.bus.publish(
+            new_event("hud.show_view", {"view": view, "visible": True}, source="hud")
+        )
+        return JSONResponse({"ok": True, **runtime.hud.snapshot()})
+
+    @app.post("/api/hud/click")
+    async def hud_click(body: dict) -> JSONResponse:
+        await runtime.bus.publish(
+            new_event(
+                "hud.click",
+                {
+                    "target": (body or {}).get("target"),
+                    "id": (body or {}).get("id"),
+                    "method": (body or {}).get("method") or "pointer",
+                },
+                source="hud",
+            )
+        )
+        return JSONResponse({"ok": True})
+
+    @app.post("/api/hud/ready")
+    async def hud_ready(body: dict) -> dict:
+        await runtime.bus.publish(
+            new_event(
+                "hud.ready",
+                {
+                    "views": list(HUD_VIEWS),
+                    "camera": bool((body or {}).get("camera")),
+                    "viewport": (body or {}).get("viewport") or {},
+                },
+                source="hud",
+            )
+        )
+        return {"ok": True, **runtime.hud.snapshot()}
 
     @app.get("/api/system")
     async def system() -> dict:
