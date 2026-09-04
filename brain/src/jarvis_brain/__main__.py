@@ -17,8 +17,10 @@ from jarvis_brain.product.app import ProductRuntime, attach_product_routes
 from jarvis_brain.product.setup import apply_setup, ensure_product_configured, load_product
 from jarvis_brain.product.start import (
     console_already_up,
+    desktop_bin,
     ensure_stack,
     hermes_up,
+    launch_desktop,
     port_in_use,
 )
 from jarvis_brain.turn import run_text_turn, speak_reply
@@ -84,7 +86,7 @@ async def _chat(args: argparse.Namespace) -> int:
                 print(f"Bus health {health.status_code} {health.text}", flush=True)
             except Exception as exc:
                 print(f"Bus health probe failed: {exc}", flush=True)
-        print(f"Console http://127.0.0.1:{cfg.bus_port}/", flush=True)
+        print(f"Brain API http://127.0.0.1:{cfg.bus_port}/ (desktop app)", flush=True)
         if args.message:
             return await _one_turn(
                 args.message, cfg, hermes, bus, session_id, tts, args.wav
@@ -200,23 +202,37 @@ async def _serve_http(
     config = uvicorn.Config(
         app, host=cfg.bus_host, port=cfg.bus_port, log_level="info", lifespan="off"
     )
-    log.info("JARVIS console on http://127.0.0.1:%s/", cfg.bus_port)
+    log.info("JARVIS brain API on http://127.0.0.1:%s/", cfg.bus_port)
     await uvicorn.Server(config).serve()
 
 
+async def _open_desktop(port: int) -> int:
+    if desktop_bin() is None:
+        print(
+            "Desktop app not built yet. The product is the Tauri window, not a browser.\n"
+            "Build: cd desktop && npm install && npx tauri build",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"Opening JARVIS desktop · brain http://127.0.0.1:{port}/", flush=True)
+    proc = launch_desktop(brain_url=f"http://127.0.0.1:{port}")
+    return int(proc.wait())
+
+
 async def _start() -> int:
+    os.environ.setdefault("JARVIS_BUS_HOST", "127.0.0.1")
     product, created = ensure_product_configured()
     if created:
         print(
             "No setup yet. Starting in demo (local mock, no cloud key).\n"
-            "Your model: jarvis setup --provider openai --api-key \"$OPENAI_API_KEY\"",
+            "Your model: open Ajustes in the app, or "
+            "jarvis setup --provider openai --api-key \"$OPENAI_API_KEY\"",
             flush=True,
         )
     _apply_saved_product()
     cfg = BrainConfig.from_env()
     if console_already_up(cfg.bus_port):
-        print(f"JARVIS already running at http://127.0.0.1:{cfg.bus_port}/", flush=True)
-        return 0
+        return await _open_desktop(cfg.bus_port)
     if port_in_use(cfg.bus_port):
         print(
             f"Port {cfg.bus_port} is already in use by another process.",
@@ -231,6 +247,7 @@ async def _start() -> int:
     bus = EventBus()
     hermes = HermesClient(cfg)
     tts = _load_tts(required=False)
+    server: asyncio.Task[None] | None = None
     try:
         await hermes.ping()
         session_id = await hermes.ensure_session()
@@ -238,7 +255,49 @@ async def _start() -> int:
             f"JARVIS · {product.mode} · {product.provider} · {product.model}",
             flush=True,
         )
-        print(f"Open http://127.0.0.1:{cfg.bus_port}/", flush=True)
+        server = asyncio.create_task(_serve_http(cfg, bus, hermes, tts, session_id))
+        for _ in range(40):
+            if console_already_up(cfg.bus_port):
+                break
+            await asyncio.sleep(0.1)
+        return await _open_desktop(cfg.bus_port)
+    except HermesError as exc:
+        print(f"Hermes error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        if server:
+            server.cancel()
+        await hermes.close()
+
+
+async def _serve_only() -> int:
+    os.environ.setdefault("JARVIS_BUS_HOST", "127.0.0.1")
+    product, created = ensure_product_configured()
+    if created:
+        print("No setup yet. Starting in demo.", flush=True)
+    _apply_saved_product()
+    cfg = BrainConfig.from_env()
+    if console_already_up(cfg.bus_port):
+        print(f"Brain already running at http://127.0.0.1:{cfg.bus_port}/", flush=True)
+        return 0
+    if port_in_use(cfg.bus_port):
+        print(f"Port {cfg.bus_port} is already in use.", file=sys.stderr)
+        return 1
+    try:
+        ensure_stack(_brain_root(), cfg.hermes_api_key)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    bus = EventBus()
+    hermes = HermesClient(cfg)
+    tts = _load_tts(required=False)
+    try:
+        await hermes.ping()
+        session_id = await hermes.ensure_session()
+        print(
+            f"JARVIS API · {product.mode} · {product.provider} · {product.model}",
+            flush=True,
+        )
         await _serve_http(cfg, bus, hermes, tts, session_id)
     except HermesError as exc:
         print(f"Hermes error: {exc}", file=sys.stderr)
@@ -311,7 +370,7 @@ def main(argv: list[str] | None = None) -> int:
     setup.add_argument("--base-url", help="OpenAI-compatible base URL (custom)")
 
     sub.add_parser("status", help="show product / Hermes / TTS")
-    sub.add_parser("start", help="open the product (console + API + bus)")
+    sub.add_parser("start", help="open the desktop app")
 
     chat = sub.add_parser("chat", help="text turn in the terminal")
     chat.add_argument("-m", "--message", help="single message, then exit")
@@ -324,15 +383,18 @@ def main(argv: list[str] | None = None) -> int:
     speak.add_argument("-m", "--message", help="text to speak")
     speak.add_argument("--wav", default="/tmp/jarvis-speak.wav")
     speak.add_argument("--voice", default="jarvis", choices=("jarvis", "companion"))
-    sub.add_parser("serve", help="same as start")
+    sub.add_parser("serve", help="brain API only (no window)")
+    sub.add_parser("app", help="same as start")
 
     args = parser.parse_args(argv)
     if args.cmd == "setup":
         return _cmd_setup(args)
     if args.cmd == "status":
         return _cmd_status()
-    if args.cmd in {"start", "serve"}:
+    if args.cmd in {"start", "app"}:
         return asyncio.run(_start())
+    if args.cmd == "serve":
+        return asyncio.run(_serve_only())
     if args.cmd == "speak":
         return asyncio.run(_speak(args))
     return asyncio.run(_chat(args))

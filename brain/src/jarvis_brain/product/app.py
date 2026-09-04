@@ -7,16 +7,20 @@ import wave
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 
 from jarvis_brain.bus.server import EventBus
 from jarvis_brain.config import BrainConfig
 from jarvis_brain.hermes.client import HermesClient, HermesError
-from jarvis_brain.product.setup import load_product, public_status
+from jarvis_brain.product.providers import PROVIDERS
+from jarvis_brain.product.setup import apply_setup, load_product, public_status
+from jarvis_brain.product.start import ensure_stack
 from jarvis_brain.turn import run_text_turn
 from jarvis_brain.voice.tts import LocalTTS
 
-CONSOLE = Path(__file__).resolve().parents[1] / "console" / "static" / "index.html"
+
+def _brain_root() -> Path:
+    return Path(__file__).resolve().parents[3]
 
 
 class ProductRuntime:
@@ -28,19 +32,21 @@ class ProductRuntime:
         hermes: HermesClient,
         tts: LocalTTS | None,
         session_id: str,
+        brain_root: Path | None = None,
     ) -> None:
         self.cfg = cfg
         self.bus = bus
         self.hermes = hermes
         self.tts = tts
         self.session_id = session_id
+        self.brain_root = brain_root or _brain_root()
         self.lock = asyncio.Lock()
 
 
 def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
     @app.get("/")
-    async def console() -> FileResponse:
-        return FileResponse(CONSOLE, media_type="text/html")
+    async def root() -> dict:
+        return {"ok": True, "app": "jarvis-brain", "ui": "desktop"}
 
     @app.get("/api/status")
     async def status() -> dict:
@@ -57,11 +63,59 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             "hermes": runtime.cfg.hermes_base_url,
             "session_id": runtime.session_id,
             "tts": runtime.tts.engine.name if runtime.tts and runtime.tts.engine else None,
+            "ui": "desktop",
             "bus": {
                 "clients": len(runtime.bus._clients),
                 "voice_clients": len(runtime.bus._voice_clients),
             },
         }
+
+    @app.get("/api/providers")
+    async def providers() -> dict:
+        return {
+            "ok": True,
+            "providers": [
+                {
+                    "id": spec.id,
+                    "model": spec.default_model,
+                    "base_url": spec.default_base_url,
+                    "key_hint": spec.key_hint,
+                }
+                for spec in PROVIDERS.values()
+            ],
+        }
+
+    @app.post("/api/setup")
+    async def setup(body: dict) -> JSONResponse:
+        provider = str((body or {}).get("provider") or "demo")
+        key = str((body or {}).get("api_key") or "")
+        model = (body or {}).get("model") or None
+        base_url = (body or {}).get("base_url") or None
+        if provider == "demo" and not key:
+            key = "sk-local"
+        try:
+            product = apply_setup(
+                provider=provider,
+                api_key=key,
+                model=model,
+                base_url=base_url,
+            )
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        warning = None
+        try:
+            ensure_stack(runtime.brain_root, runtime.cfg.hermes_api_key)
+            runtime.session_id = await runtime.hermes.ensure_session()
+        except Exception as exc:
+            warning = str(exc)
+        return JSONResponse(
+            {
+                "ok": True,
+                "product": public_status(product),
+                "session_id": runtime.session_id,
+                "warning": warning,
+            }
+        )
 
     @app.post("/api/chat")
     async def chat(body: dict) -> JSONResponse:

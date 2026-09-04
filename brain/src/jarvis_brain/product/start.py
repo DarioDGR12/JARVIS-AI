@@ -252,3 +252,37 @@ def ensure_stack(brain_root: Path, hermes_key: str) -> None:
 def ensure_demo_stack(brain_root: Path, hermes_key: str) -> None:
     """Back-compat alias used by older call sites."""
     ensure_stack(brain_root, hermes_key)
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def desktop_bin() -> Path | None:
+    env = os.environ.get("JARVIS_DESKTOP_BIN")
+    if env and Path(env).is_file():
+        return Path(env)
+    root = repo_root()
+    for cand in (
+        root / "desktop" / "src-tauri" / "target" / "debug" / "jarvis-desktop",
+        root / "desktop" / "src-tauri" / "target" / "release" / "jarvis-desktop",
+        Path.home() / ".local" / "bin" / "jarvis-desktop",
+    ):
+        if cand.is_file() and os.access(cand, os.X_OK):
+            return cand
+    found = shutil_which("jarvis-desktop")
+    return Path(found) if found else None
+
+
+def launch_desktop(*, brain_url: str) -> subprocess.Popen:
+    binary = desktop_bin()
+    if binary is None:
+        raise RuntimeError(
+            "JARVIS desktop app is not built.\n"
+            "From the repo: bash scripts/install.sh\n"
+            "Or: cd desktop && npm install && npx tauri build"
+        )
+    env = os.environ.copy()
+    env["JARVIS_BRAIN_URL"] = brain_url
+    env.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+    return subprocess.Popen([str(binary)], env=env)

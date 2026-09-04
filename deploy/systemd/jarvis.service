@@ -1,10 +1,10 @@
 [Unit]
-Description=JARVIS console (bus + Hermes client + local TTS)
+Description=JARVIS brain API (desktop app talks to this)
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 -m jarvis_brain start
+ExecStart=/usr/bin/python3 -m jarvis_brain serve
 Restart=on-failure
 Environment=JARVIS_BUS_HOST=127.0.0.1
 Environment=JARVIS_TTS_PROVIDER=piper

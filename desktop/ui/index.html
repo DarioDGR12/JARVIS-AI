@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JARVIS</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header id="titlebar" data-tauri-drag-region>
+    <div class="brand" data-tauri-drag-region>JARVIS</div>
+    <div id="meta">conectando…</div>
+    <div class="win">
+      <button type="button" id="btn-settings" title="Ajustes">⚙</button>
+      <button type="button" id="btn-min" title="Minimizar">–</button>
+      <button type="button" id="btn-max" title="Maximizar">□</button>
+      <button type="button" id="btn-close" class="close" title="Cerrar">×</button>
+    </div>
+  </header>
+
+  <main id="chat-view">
+    <div id="log">
+      <div class="hint" id="hint">Escribe. JARVIS responde y habla en este equipo.</div>
+    </div>
+    <form id="f">
+      <input id="q" autocomplete="off" placeholder="Escribe. Enter envía." />
+      <label class="mute"><input type="checkbox" id="mute" /> Silencio</label>
+      <button type="submit">Enviar</button>
+    </form>
+  </main>
+
+  <section id="settings-view" hidden>
+    <h2>Ajustes</h2>
+    <p class="lead">Tu key del modelo. No se sube a git. El cerebro no llama al proveedor: lo hace Hermes en local.</p>
+    <form id="setup">
+      <label>Proveedor
+        <select id="provider">
+          <option value="demo">Demo (sin key)</option>
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="custom">Custom / Ollama</option>
+        </select>
+      </label>
+      <label id="key-row">API key
+        <input id="api-key" type="password" autocomplete="off" placeholder="sk-…" />
+      </label>
+      <label>Modelo
+        <input id="model" autocomplete="off" placeholder="por defecto del proveedor" />
+      </label>
+      <label id="base-row" hidden>Base URL
+        <input id="base-url" autocomplete="off" placeholder="http://127.0.0.1:11434/v1" />
+      </label>
+      <div class="row">
+        <button type="submit">Guardar</button>
+        <button type="button" id="btn-back">Volver al chat</button>
+      </div>
+      <p id="setup-msg" class="msg-line"></p>
+    </form>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>
