@@ -517,11 +517,13 @@ HA corre aparte. El adaptador traduce eventos ↔ HTTP/WS.
 voice.wake | hud.click | hud.gesture
     → STT → voice.transcript
     → snapshot: vision.screen_context + ha.state + map.selection
-                + surveillance.status + system.stats + hora
+                + surveillance.status + memory.search + system.stats + hora
     → phrase-map (volumen / lock pantalla) ──hit──► hud.speak corto, sin Hermes
          (lock = public; unlock / HA write / shell = sensitive)
-    → PersonaClassifier → overlay jarvis|companion
+    → PersonaClassifier → overlay jarvis|companion + memory.hit
     → Hermes chat/stream { input, instructions: overlay }
+         ├ ... (tools igual)
+    → fin de turno: memory.add (background, no bloquear TTS)
          ├ tool hud_*     → hud.display / hud.show_view / hud.highlight
          ├ tool map_*     → map.focus / map.show_feeds / map.query
          ├ tool ha_*      → [auth gate] → ha.command
