@@ -51,6 +51,18 @@ def test_chat_and_status() -> None:
     assert "hola" in body["reply"]
 
 
+def test_cors_for_tauri() -> None:
+    client = _client()
+    r = client.options(
+        "/api/status",
+        headers={
+            "Origin": "http://tauri.localhost",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert r.headers.get("access-control-allow-origin") == "http://tauri.localhost"
+
+
 def test_providers() -> None:
     client = _client()
     r = client.get("/api/providers")

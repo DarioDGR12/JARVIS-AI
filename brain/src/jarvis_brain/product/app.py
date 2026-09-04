@@ -7,6 +7,7 @@ import wave
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from jarvis_brain.bus.server import EventBus
@@ -44,6 +45,20 @@ class ProductRuntime:
 
 
 def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "tauri://localhost",
+            "http://tauri.localhost",
+            "https://tauri.localhost",
+            "http://localhost",
+            "https://localhost",
+        ],
+        allow_origin_regex=r"https?://(127\.0\.0\.1|localhost|tauri\.localhost)(:\d+)?",
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     @app.get("/")
     async def root() -> dict:
         return {"ok": True, "app": "jarvis-brain", "ui": "desktop"}

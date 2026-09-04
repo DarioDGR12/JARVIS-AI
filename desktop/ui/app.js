@@ -64,8 +64,9 @@
       if (p.model) document.getElementById("model").value = p.model;
       if (p.base_url) document.getElementById("base-url").value = p.base_url;
       syncProviderFields();
-    } catch {
+    } catch (err) {
       meta.textContent = "cerebro no responde";
+      console.error("status", err);
     }
   }
 
