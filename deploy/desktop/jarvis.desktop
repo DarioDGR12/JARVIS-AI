@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=JARVIS
+Comment=Asistente local (Tauri / kiosk)
+Exec=jarvis start
+Terminal=false
+Categories=Utility;
+StartupNotify=true
+X-GNOME-Autostart-enabled=false

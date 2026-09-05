@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=JARVIS kiosk
+Comment=Chromium kiosk fallback for the JARVIS HUD
+Exec=jarvis-kiosk
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=false

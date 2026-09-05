@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JARVIS</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="gestures.js" defer></script>
+</head>
+<body data-mode="boot" data-visual="jarvis" data-view="home">
+  <div class="frame" aria-hidden="true"></div>
+  <header id="titlebar">
+    <div class="bar" data-tauri-drag-region>
+      <div class="brand" data-tauri-drag-region>JARVIS</div>
+      <div id="mode-chip">BOOT</div>
+      <div id="meta">conectando…</div>
+      <div class="win">
+        <button type="button" id="btn-settings" title="Ajustes">⚙</button>
+        <button type="button" id="btn-min" title="Minimizar">–</button>
+        <button type="button" id="btn-max" title="Maximizar">□</button>
+        <button type="button" id="btn-close" class="close" title="Cerrar">×</button>
+      </div>
+    </div>
+    <nav id="nav">
+      <button type="button" data-view="home" class="on">Inicio</button>
+      <button type="button" data-view="chat">Chat</button>
+      <button type="button" data-view="system">Sistema</button>
+      <button type="button" data-view="ha">Casa</button>
+      <button type="button" data-view="map">Mapa</button>
+      <button type="button" data-view="vision">Visión</button>
+      <button type="button" data-view="settings">Ajustes</button>
+      <button type="button" id="btn-visor">Visor</button>
+      <button type="button" id="btn-overlay" title="Anillo en segunda ventana">Overlay</button>
+      <button type="button" id="btn-through" title="Clics atraviesan la ventana">Clics</button>
+      <button type="button" id="btn-mic" title="Escuchar">Mic</button>
+    </nav>
+  </header>
+
+  <section id="home-view">
+    <div id="ring" data-mode="boot">
+      <div class="ring r1"></div>
+      <div class="ring r2"></div>
+      <div class="ring r3"></div>
+      <div class="core">
+        <div id="core-label">BOOT</div>
+        <div id="core-visual">JARVIS</div>
+      </div>
+    </div>
+    <aside id="hud-side">
+      <article id="cam-pip" class="panel">
+        <h3>Webcam</h3>
+        <div class="cam-frame" id="cam-home-frame" title="Abrir Visión">
+          <video id="cam-home" autoplay playsinline muted></video>
+          <div id="cam-home-empty" class="cam-empty">sin cámara</div>
+          <div class="cam-badge">OFF</div>
+          <div class="cam-hold-banner">Look at camera</div>
+        </div>
+        <div class="row tight">
+          <button type="button" id="btn-cam-home">Encender</button>
+        </div>
+      </article>
+      <article id="last-display" class="panel">
+        <h3>Pantalla</h3>
+        <p id="display-title">en espera</p>
+        <p id="display-body">Sin eventos todavía.</p>
+      </article>
+      <article id="last-speak" class="panel">
+        <h3>Voz</h3>
+        <p id="speak-body">Silencio.</p>
+        <div class="row tight">
+          <button type="button" id="btn-mic-home">Escuchar</button>
+        </div>
+      </article>
+      <article id="toasts" class="panel">
+        <h3>Avisos</h3>
+        <div id="toast-list"></div>
+      </article>
+    </aside>
+  </section>
+
+  <main id="chat-view" hidden>
+    <div id="log">
+      <div class="hint" id="hint">Escribe. JARVIS responde y habla en este equipo.</div>
+    </div>
+    <form id="f">
+      <input id="q" autocomplete="off" placeholder="Escribe o pulsa Mic. Enter envía." />
+      <label class="mute"><input type="checkbox" id="mute" /> Silencio</label>
+      <button type="button" id="btn-mic-chat" title="Escuchar">Mic</button>
+      <button type="submit">Enviar</button>
+    </form>
+  </main>
+
+  <section id="system-view" hidden>
+    <h2>Sistema</h2>
+    <pre id="sys-stats">…</pre>
+    <p class="lead" id="auth-line">Howdy: …</p>
+    <p class="lead" id="cam-line">Webcam HUD: …</p>
+    <p class="lead" id="voice-line">Voz: …</p>
+    <p class="lead" id="surv-line">Puerta: …</p>
+    <p class="lead" id="doctor-line">Doctor: …</p>
+    <p class="lead" id="surv-proto">Detector: POST /api/surveillance/alert · kind, camera, score, text</p>
+    <div class="row tight">
+      <button type="button" id="btn-arm">Armar puerta</button>
+    </div>
+  </section>
+
+  <section id="ha-view" hidden>
+    <h2>Casa</h2>
+    <p class="lead">Home Assistant en la LAN. Los writes piden cara (Howdy). Token en ~/.config/jarvis/ha.env</p>
+    <form id="ha-setup">
+      <label>URL <input id="ha-url" placeholder="http://homeassistant.local:8123" /></label>
+      <label>Token <input id="ha-token" type="password" autocomplete="off" /></label>
+      <button type="submit">Guardar HA</button>
+    </form>
+    <p id="ha-msg" class="msg-line"></p>
+    <div id="ha-schematic" class="schematic" aria-label="esquema casa"></div>
+    <div id="ha-rooms" class="schematic rooms" aria-label="habitaciones"></div>
+    <div id="ha-states"></div>
+  </section>
+
+  <section id="map-view" hidden>
+    <div id="map-slot"></div>
+    <aside id="map-side">
+      <h2>Mapa</h2>
+      <p class="lead">Tierra real (NASA Blue Marble). Same-origin. Extracto corto, no 10k cámaras.</p>
+      <p id="map-status" class="msg-line">sin montar</p>
+      <p id="map-sel" class="msg-line"></p>
+      <div id="live-box">
+        <video id="live-video" controls muted playsinline hidden></video>
+        <p id="live-empty" class="msg-line">sin directo · un feed (NASA+)</p>
+      </div>
+    </aside>
+  </section>
+
+  <section id="vision-view" hidden>
+    <div id="vision-grid">
+      <article class="vision-card">
+        <h2>Pantalla</h2>
+        <p class="lead">xdg-desktop-portal / ffmpeg. Opt-in. Un frame en RAM, sin PNG a disco.</p>
+        <div class="cam-frame tall">
+          <img id="screen-preview" alt="captura de pantalla" hidden />
+          <div id="screen-empty" class="cam-empty">sin captura</div>
+          <div id="screen-highlight" hidden></div>
+          <div id="screen-regions" hidden></div>
+        </div>
+        <div class="row">
+          <button type="button" id="btn-capture">Capturar</button>
+          <button type="button" id="btn-watch">Vigilancia pantalla</button>
+        </div>
+        <p id="vision-msg" class="msg-line"></p>
+      </article>
+      <article class="vision-card">
+        <h2>Webcam</h2>
+        <p class="lead">Una sola getUserMedia. El globo no abre otra. Howdy la pausa con hold.</p>
+        <div class="cam-frame tall">
+          <video id="cam-vision" autoplay playsinline muted></video>
+          <div id="cam-vision-empty" class="cam-empty">cámara apagada</div>
+          <div class="cam-badge">OFF</div>
+          <div class="cam-hold-banner">Look at camera</div>
+        </div>
+        <div class="row">
+          <button type="button" id="btn-cam">Encender cámara</button>
+          <select id="cam-device" hidden aria-label="Dispositivo de cámara"></select>
+        </div>
+        <p id="cam-msg" class="msg-line"></p>
+      </article>
+    </div>
+  </section>
+
+  <section id="settings-view" hidden>
+    <h2>Ajustes</h2>
+    <p class="lead">Tu key del modelo. No se sube a git. El cerebro no llama al proveedor: lo hace Hermes en local.</p>
+    <form id="setup">
+      <label>Proveedor
+        <select id="provider">
+          <option value="demo">Demo (sin key)</option>
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="custom">Custom / Ollama</option>
+        </select>
+      </label>
+      <label id="key-row">API key
+        <input id="api-key" type="password" autocomplete="off" placeholder="sk-…" />
+      </label>
+      <label>Modelo
+        <input id="model" autocomplete="off" placeholder="por defecto del proveedor" />
+      </label>
+      <label id="base-row" hidden>Base URL
+        <input id="base-url" autocomplete="off" placeholder="http://127.0.0.1:11434/v1" />
+      </label>
+      <div class="row">
+        <button type="submit">Guardar</button>
+        <button type="button" id="btn-back">Volver al inicio</button>
+      </div>
+      <p id="setup-msg" class="msg-line"></p>
+    </form>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>

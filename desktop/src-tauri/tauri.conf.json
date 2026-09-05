@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "JARVIS",
+  "version": "0.5.0",
+  "identifier": "ai.jarvis.desktop",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "JARVIS",
+        "width": 1040,
+        "height": 700,
+        "minWidth": 800,
+        "minHeight": 560,
+        "decorations": false,
+        "transparent": true,
+        "resizable": true,
+        "center": true
+      },
+      {
+        "label": "overlay",
+        "title": "JARVIS overlay",
+        "url": "overlay.html",
+        "width": 280,
+        "height": 280,
+        "decorations": false,
+        "transparent": true,
+        "resizable": false,
+        "visible": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https:; media-src 'self' blob: data: mediastream: https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; script-src 'self'; frame-src 'self'; worker-src 'self' blob:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/henry.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ]
+  }
+}

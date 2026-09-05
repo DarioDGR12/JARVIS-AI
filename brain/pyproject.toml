@@ -1,0 +1,50 @@
+[project]
+name = "jarvis-brain"
+version = "0.5.0"
+description = "JARVIS orchestrator: event bus, Hermes, local TTS (Chatterbox), auth, tools"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "httpx>=0.27",
+    "websockets>=14",
+]
+
+[project.optional-dependencies]
+tts = [
+    # Chatterbox engine is local. Do NOT install realtimetts[all] (pulls ElevenLabs).
+    "realtimetts[chatterbox]==0.8.5",
+]
+stt = [
+    "faster-whisper>=1.1",
+    "openwakeword>=0.6",
+]
+memory = [
+    "mem0ai>=0.1.48",
+    "qdrant-client>=1.9",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.25",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jarvis_brain"]
+
+[project.scripts]
+jarvis = "jarvis_brain.__main__:main"
+jarvis-brain = "jarvis_brain.__main__:main"
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/jarvis_brain/console/static/index.html" = "jarvis_brain/console/static/index.html"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"

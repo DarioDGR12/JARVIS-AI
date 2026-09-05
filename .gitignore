@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.env
+.hf-cache/
+node_modules/
+/desktop/src-tauri/target/
+desktop/src-tauri/gen/

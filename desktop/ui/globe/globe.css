@@ -1,0 +1,9 @@
+html, body { height: 100%; margin: 0; background: #05070b; overflow: hidden; }
+#scene { position: absolute; inset: 0; }
+#hud {
+  position: absolute; left: 12px; bottom: 12px; z-index: 2;
+  color: #d4b36a; font: 12px/1.4 "IBM Plex Sans", "Segoe UI", sans-serif;
+  pointer-events: none; letter-spacing: 0.12em; text-transform: uppercase;
+}
+#focus { color: #8b97a8; letter-spacing: 0.04em; text-transform: none; margin-top: 4px; }
+#count { color: #6ec8d4; margin-top: 2px; }

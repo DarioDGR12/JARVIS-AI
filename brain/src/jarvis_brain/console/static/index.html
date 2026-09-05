@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JARVIS</title>
+  <style>
+    :root {
+      --bg: #07090d;
+      --panel: #10151d;
+      --line: #243044;
+      --gold: #d4b36a;
+      --text: #e8eef6;
+      --mute: #8b97a8;
+      --you: #1b2430;
+      --me: #162028;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.45 "IBM Plex Sans", "Segoe UI", sans-serif; }
+    body { display: flex; flex-direction: column; max-width: 760px; margin: 0 auto; padding: 24px 16px 12px; }
+    header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+    h1 { font-weight: 500; letter-spacing: 0.28em; font-size: 14px; color: var(--gold); margin: 0; }
+    #meta { color: var(--mute); font-size: 12px; }
+    #log { flex: 1; overflow: auto; border: 1px solid var(--line); background: var(--panel);
+      padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .msg { padding: 10px 12px; max-width: 92%; white-space: pre-wrap; }
+    .you { align-self: flex-end; background: var(--you); border: 1px solid var(--line); }
+    .jarvis { align-self: flex-start; background: var(--me); border-left: 2px solid var(--gold); }
+    .err { color: #e07a7a; }
+    form { display: flex; gap: 8px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
+    input, button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); padding: 10px 12px; }
+    input { flex: 1 1 180px; min-width: 0; }
+    button { color: var(--gold); cursor: pointer; letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; flex: 0 0 auto; }
+    button:disabled { opacity: 0.4; cursor: wait; }
+    label.mute { color: var(--mute); font-size: 12px; display: flex; gap: 6px; align-items: center; white-space: nowrap; flex: 0 0 auto; }
+    .hint { color: var(--mute); font-size: 13px; padding: 24px 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>JARVIS</h1>
+    <div id="meta">conectando…</div>
+  </header>
+  <div id="log"><div class="hint" id="hint">Escribe. JARVIS responde y habla en este equipo.</div></div>
+  <form id="f">
+    <input id="q" autocomplete="off" placeholder="Escribe. Enter envía." />
+    <label class="mute"><input type="checkbox" id="mute" /> Silencio</label>
+    <button type="submit">Enviar</button>
+  </form>
+  <script>
+    const log = document.getElementById("log");
+    const meta = document.getElementById("meta");
+    const form = document.getElementById("f");
+    const q = document.getElementById("q");
+    const mute = document.getElementById("mute");
+    const btn = form.querySelector("button");
+
+    function add(cls, text) {
+      const hint = document.getElementById("hint");
+      if (hint) hint.remove();
+      const el = document.createElement("div");
+      el.className = "msg " + cls;
+      el.textContent = text;
+      log.appendChild(el);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function refresh() {
+      try {
+        const s = await fetch("/api/status").then(r => r.json());
+        const p = s.product || {};
+        const mode = p.mode === "byok" ? "BYOK " + (p.provider || "") : (p.mode || "demo");
+        meta.textContent = (s.ok ? "en línea" : "Hermes caído") + " · " + mode
+          + (s.tts ? " · voz " + s.tts : " · sin voz");
+      } catch {
+        meta.textContent = "servidor no responde";
+      }
+    }
+
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const text = q.value.trim();
+      if (!text) return;
+      q.value = "";
+      add("you", text);
+      btn.disabled = true;
+      try {
+        const r = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text })
+        });
+        const data = await r.json();
+        if (!data.ok) throw new Error(data.error || r.statusText);
+        add("jarvis", data.reply || "(sin texto)");
+        if (data.audio_wav_b64 && !mute.checked) {
+          const src = "data:audio/wav;base64," + data.audio_wav_b64;
+          const audio = new Audio(src);
+          audio.play().catch(() => {});
+        }
+      } catch (err) {
+        add("err", String(err.message || err));
+      } finally {
+        btn.disabled = false;
+        q.focus();
+      }
+    });
+
+    refresh();
+    setInterval(refresh, 8000);
+    q.focus();
+  </script>
+</body>
+</html>
