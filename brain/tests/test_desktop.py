@@ -50,7 +50,7 @@ def test_repo_contains_tauri_app() -> None:
     globe = root / "desktop" / "ui" / "globe"
     assert (globe / "vendor" / "hls.min.js").is_file()
     assert '"hls"' in (globe / "feeds.json").read_text()
-    assert "ntv1.akamaized.net" in (globe / "feeds.json").read_text()
+    assert "nasaplus.akamaized.net" in (globe / "feeds.json").read_text()
     csp = (root / "desktop" / "src-tauri" / "tauri.conf.json").read_text()
     assert "transparent" in csp
     assert "media-src" in csp and "https:" in csp

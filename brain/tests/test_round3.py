@@ -7,6 +7,7 @@ from jarvis_brain.bus.server import EventBus
 from jarvis_brain.config import BrainConfig
 from jarvis_brain.hermes.client import StreamEvent
 from jarvis_brain.map.feeds import normalize_feed
+from jarvis_brain.map.hls_proxy import host_allowed, rewrite_playlist
 from jarvis_brain.memory.layered import LayeredMemory
 from jarvis_brain.memory.mem0_local import local_mem0_config, ollama_up
 from jarvis_brain.memory.store import LocalMemory
@@ -113,19 +114,31 @@ def test_layered_memory_complements(tmp_path: Path) -> None:
     assert layered.backend == "mem0+jsonl"
 
 
+def test_hls_proxy_rewrites_and_blocks() -> None:
+    assert host_allowed("nasaplus.akamaized.net") is True
+    assert host_allowed("ntv1.akamaized.net") is True
+    assert host_allowed("evil.example") is False
+    text = rewrite_playlist("#EXTM3U\n16995-0.m3u8\n", "https://nasaplus.akamaized.net/output/16995.m3u8")
+    assert "/api/map/hls?u=" in text
+    assert "16995-0.m3u8" in text
+    client, _ = _client()
+    denied = client.get("/api/map/hls", params={"u": "https://example.com/x.m3u8"})
+    assert denied.status_code == 400
+
+
 def test_live_feed_in_catalog() -> None:
     raw = {
         "id": "iss",
-        "loc": "NASA TV / ISS",
+        "loc": "NASA+ / Far Out",
         "country": "ISS",
         "lat": 27.5,
         "lon": -80.55,
-        "hls": "https://ntv1.akamaized.net/hls/live/2014075/NASA-NTV1-HLS/master.m3u8",
+        "hls": "https://nasaplus.akamaized.net/output/16995.m3u8",
         "tags": ["live"],
     }
     feed = normalize_feed(raw)
     assert feed and feed["live"] is True
-    assert feed["hls"].startswith("https://ntv1.")
+    assert feed["hls"].startswith("https://nasaplus.")
     client, runtime = _client()
     data = client.get("/api/map").json()
     assert data["live"]

@@ -135,9 +135,9 @@ Nueve agentes. Cada ronda investiga, corta un slice usable y pasa QA.
 **Siguiente:** embeddings locales si no hay Ollama.
 
 ### A-BRIEF
-**Investiga:** Un HLS, no 10k cams. NASA TV Akamai responde 200.  
-**Slice:** pin `iss` + `hls.js` 1.5.20. «pon el feed vivo» / clic en el pin. Fail soft si el directo cae.  
-**Siguiente:** más de un directo (sigue capado).
+**Investiga:** Un HLS, no 10k cams. El master de NASA TV (`ntv1…/NASA-NTV1-HLS`) sigue en 200 pero las variantes dan 404 (playlist cacheada de 2024). Chrome a Akamai = 403 por `Origin`.  
+**Slice:** pin `iss` → NASA+ VOD (`nasaplus.akamaized.net/output/16995.m3u8`, Far Out). `hls.js` 1.5.20. Proxy allowlist `*.akamaized.net` reescribe playlists. «pon el feed vivo» / clic en el pin.  
+**Siguiente:** más de un directo (sigue capado). 24/7 cuando NASA+ vuelva a publicar HLS vivo.
 
 ### A-DOOR
 **Investiga:** ultralytics es AGPL.  

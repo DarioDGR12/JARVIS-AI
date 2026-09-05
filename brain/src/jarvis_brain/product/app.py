@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from jarvis_brain.auth.howdy import AuthGate
 from jarvis_brain.bus.envelope import new_event
@@ -18,6 +18,7 @@ from jarvis_brain.ha.client import HomeAssistant, load_ha_config, write_ha_confi
 from jarvis_brain.hermes.client import HermesClient, HermesError
 from jarvis_brain.hud.state import HUD_VIEWS, HudState
 from jarvis_brain.map.feeds import filter_feeds, query_feeds
+from jarvis_brain.map.hls_proxy import fetch_hls
 from jarvis_brain.map.state import MapState
 from jarvis_brain.memory.store import LocalMemory
 from jarvis_brain.product.providers import PROVIDERS
@@ -448,6 +449,10 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
                 )
             )
         return {"ok": True, **runtime.hud.snapshot()}
+
+    @app.get("/api/map/hls")
+    async def map_hls(u: str) -> Response:
+        return fetch_hls(u)
 
     @app.get("/api/map")
     async def map_state() -> dict:

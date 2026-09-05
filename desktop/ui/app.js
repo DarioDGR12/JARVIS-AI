@@ -205,7 +205,7 @@
       video.load();
       video.hidden = true;
     }
-    if (empty) empty.textContent = "sin directo · un feed (NASA TV)";
+    if (empty) empty.textContent = "sin directo · un feed (NASA+)";
   }
 
   function loadHlsLib() {
@@ -225,18 +225,32 @@
     if (!video || !url) return;
     stopLive();
     if (empty) empty.textContent = "conectando " + (label || "live") + "…";
+    if (url.indexOf("/api/map/hls") < 0) {
+      const base = await brainUrl();
+      url = base + "/api/map/hls?u=" + encodeURIComponent(url);
+    }
     try {
-      if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = url;
-      } else {
-        const Hls = await loadHlsLib();
-        if (Hls && Hls.isSupported()) {
-          hlsHandle = new Hls({ enableWorker: true, lowLatencyMode: true });
+      const Hls = await loadHlsLib().catch(() => null);
+      if (Hls && Hls.isSupported()) {
+        hlsHandle = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+          startLevel: 0,
+        });
+        await new Promise((resolve, reject) => {
+          const onFatal = (_, data) => {
+            if (data && data.fatal) reject(new Error(data.details || "hls"));
+          };
+          hlsHandle.on(Hls.Events.ERROR, onFatal);
+          hlsHandle.on(Hls.Events.MANIFEST_PARSED, () => resolve());
           hlsHandle.loadSource(url);
           hlsHandle.attachMedia(video);
-        } else {
-          throw new Error("HLS no soportado");
-        }
+          setTimeout(() => reject(new Error("timeout HLS")), 12000);
+        });
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = url;
+      } else {
+        throw new Error("HLS no soportado");
       }
       video.hidden = false;
       await video.play().catch(() => {});
