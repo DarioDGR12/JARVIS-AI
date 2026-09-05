@@ -2,6 +2,7 @@
 # First-run on Pop!_OS. Does not download YOLO or ElevenLabs.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+echo "JARVIS trial $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo '?')"
 bash "$ROOT/scripts/install.sh" "$@"
 export PATH="${XDG_BIN_HOME:-$HOME/.local/bin}:$PATH"
 export JARVIS_BUS_HOST="${JARVIS_BUS_HOST:-127.0.0.1}"

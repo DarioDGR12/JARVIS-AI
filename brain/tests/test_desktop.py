@@ -78,6 +78,7 @@ def test_repo_contains_tauri_app() -> None:
     assert (root / "docs" / "POPOS.md").is_file()
     assert (root / "scripts" / "popos-trial.sh").is_file()
     install = (root / "scripts" / "install.sh").read_text()
+    assert "0.5.1" in install
     assert "python3 -m venv" in install
     assert "tesseract-ocr" in install
     assert "jarvis/venv" in install
