@@ -19,6 +19,13 @@ JARVIS-AI is Apache-2.0. This file lists code and data bundled beside it.
 WebcamMap (~9 740 cams, ODbL) is **not** bundled. A later extract would need
 OSM attribution and share-alike on that dataset alone.
 
+## hls.js 1.5.20
+
+- License: Apache-2.0
+- Path: `desktop/ui/globe/vendor/hls.min.js`
+- https://github.com/video-dev/hls.js
+- Loaded only to play the single NASA TV / ISS live pin.
+
 ## NASA Blue Marble
 
 - License: public domain (NASA / US Government)
