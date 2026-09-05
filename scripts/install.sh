@@ -5,6 +5,7 @@
 #   bash scripts/install.sh
 #   bash scripts/install.sh --apt --hermes
 set -euo pipefail
+echo "JARVIS install 0.5.1 · venv · sin snap Chromium"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VENV="${JARVIS_VENV:-$HOME/.local/share/jarvis/venv}"
 BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"

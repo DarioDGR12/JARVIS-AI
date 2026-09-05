@@ -19,10 +19,12 @@ Si ya clonaste `main`, o el primer `--apt` rompió `dpkg` por el snap de Chromiu
 cd ~/JARVIS-AI
 git fetch origin
 git checkout cursor/integration-plan-5cec
-git pull
-sudo dpkg --configure -a
+git pull --ff-only origin cursor/integration-plan-5cec
+sudo dpkg --configure -a || true
+sudo apt-get remove -y chromium-browser || true
 sudo apt-get -f install -y
 bash scripts/popos-trial.sh --apt --hermes
+# Debe imprimir: JARVIS install 0.5.1 · venv · sin snap Chromium
 ```
 
 `--apt` instala Tesseract, ffmpeg, xdotool, webkit (sudo). **No** instala `chromium-browser` (en Pop 24.04 es un snap y suele fallar). El kiosk usa Chrome, Brave o Firefox si ya los tienes.  
