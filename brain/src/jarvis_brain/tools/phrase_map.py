@@ -90,6 +90,35 @@ _VISION_CAM_ON = re.compile(
     r"|\b(c[aá]mara|webcam)\b(\s+(por favor|please))?$",
     re.I,
 )
+_VISION_OPEN = re.compile(
+    r"\b(abre|abrir|open)\b.+\b(enlace|enlaces|url|urls|link|links)\b"
+    r"|\b(abre ese link|abre la url)\b",
+    re.I,
+)
+_RECALL = re.compile(
+    r"\b(qu[eé] recuerdas|qu[eé] sabes de m[ií]|lista (de )?recuerdos|"
+    r"what do you remember)\b",
+    re.I,
+)
+_HA_SCENE = re.compile(
+    r"\b(?:activa(?:r)?|enciende|pon|lanza)\b.+\bescena\s+(.+)$"
+    r"|\bescena\s+(.+)$"
+    r"|\bscene\s+(.+)$",
+    re.I,
+)
+_CLICK_THROUGH_OFF = re.compile(
+    r"\b(captura (los )?clics|deja de atravesar|sin click.?through)\b",
+    re.I,
+)
+_CLICK_THROUGH_ON = re.compile(
+    r"\b(deja pasar( los)? clics|atraviesa|click.?through|ignora (los )?clics)\b",
+    re.I,
+)
+
+
+def scene_entity(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9_]+", "_", (name or "").strip().lower()).strip("_")
+    return f"scene.{slug or 'noche'}"
 
 
 def _run(cmd: list[str]) -> bool:
@@ -137,6 +166,30 @@ def match_phrase(text: str) -> PhraseHit | None:
     if forget:
         fact = forget.group(2).strip()
         return PhraseHit("memory.forget", f"Olvidando: {fact}", True, {"query": fact})
+    if _RECALL.search(raw):
+        return PhraseHit("memory.list", "Repasando hechos.", True)
+    if _CLICK_THROUGH_OFF.search(raw):
+        return PhraseHit("hud.click_through", "Clics de vuelta al visor.", True, {"enabled": False})
+    if _CLICK_THROUGH_ON.search(raw):
+        return PhraseHit(
+            "hud.click_through",
+            "Clics atraviesan. Di «captura los clics» o usa la bandeja.",
+            True,
+            {"enabled": True},
+        )
+    scene = _HA_SCENE.search(raw)
+    if scene:
+        name = (scene.group(1) or scene.group(2) or scene.group(3) or "").strip()
+        if name:
+            entity = scene_entity(name)
+            return PhraseHit(
+                "ha.scene",
+                f"Activando {entity}.",
+                True,
+                {"entity_id": entity, "name": name},
+            )
+    if _VISION_OPEN.search(raw):
+        return PhraseHit("vision.open", "Abriendo enlaces de la pantalla.", True)
     if _VISOR_OFF.search(raw):
         return PhraseHit("hud.visor", "Visor off.", True, {"enabled": False})
     if _VISOR_ON.search(raw):

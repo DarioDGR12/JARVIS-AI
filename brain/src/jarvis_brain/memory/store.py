@@ -91,6 +91,14 @@ class LocalMemory:
             for score, item in scored[:k]
         ]
 
+    def list_facts(self, k: int = 20) -> list[dict]:
+        items = [i for i in self._load() if i.role == "fact"]
+        items.sort(key=lambda item: -item.ts)
+        return [
+            {"id": item.id, "text": item.text, "role": item.role, "ts": item.ts}
+            for item in items[: max(1, k)]
+        ]
+
     def forget(self, *, query: str | None = None, id: str | None = None) -> int:
         items = self._load()
         before = len(items)

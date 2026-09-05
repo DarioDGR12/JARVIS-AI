@@ -44,6 +44,6 @@ HUD (inicio, chat, sistema, casa, mapa, visión, ajustes), globo SENTINEL, captu
 
 ## Qué no está (aún)
 
-STT/wake reales (ronda 1 = API stub), gestos MediaPipe, YOLO embebido, mem0 Cloud. Puerta = ingest externo. Ver [docs/AGENTS.md](docs/AGENTS.md).
+openWakeWord / whisper local (el HUD usa Web Speech), gestos MediaPipe, YOLO embebido, mem0 Cloud. Puerta = ingest externo. Ver [docs/AGENTS.md](docs/AGENTS.md).
 
 Licencia Apache-2.0. Plan largo: [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md).

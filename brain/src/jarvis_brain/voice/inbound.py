@@ -4,10 +4,10 @@ from typing import Any
 
 
 def engine_status() -> dict[str, Any]:
-    """Ronda 1: contrato. openWakeWord / faster-whisper aún no se cargan aquí."""
+    """HUD Web Speech. openWakeWord / faster-whisper siguen fuera (ronda 3)."""
     return {
-        "wake": "stub",
-        "stt": "stub",
-        "barge_in": False,
-        "note": "POST /api/voice/wake y /api/voice/transcript. Modelos locales en ronda 2.",
+        "wake": "hud-phrase",
+        "stt": "web-speech",
+        "barge_in": True,
+        "note": "Mic HUD + Web Speech API. Barge-in corta el TTS. Modelos locales en ronda 3.",
     }

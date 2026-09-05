@@ -34,6 +34,10 @@
   let camStarting = false;
   let lastCamDevice = "";
   try { lastCamDevice = localStorage.getItem(CAM_DEVICE_KEY) || ""; } catch { lastCamDevice = ""; }
+  let ttsAudio = null;
+  let voiceRec = null;
+  let voiceListening = false;
+  const WAKE_RE = /^(oye\s+|hey\s+)?jarvis[,.]?\s*/i;
 
   function tauri() {
     return window.__TAURI__ || null;
@@ -88,6 +92,7 @@
     });
     applyCamFromHud(hud);
     applyVisor(!!hud.visor, { remote: true });
+    applyClickThrough(!!hud.click_through, { remote: true });
     if (hud.presence !== undefined && hud.presence !== null) {
       document.body.dataset.presence = hud.presence ? "1" : "0";
     }
@@ -155,14 +160,19 @@
       || ev.type === "auth.challenge" || ev.type === "auth.result" || ev.type === "hud.ready"
       || ev.type === "hud.camera" || ev.type === "vision.screen_context" || ev.type === "vision.error"
       || ev.type === "vision.watch" || ev.type === "hud.visor" || ev.type === "hud.presence"
-      || ev.type === "voice.wake" || ev.type === "system.alert" || ev.type === "surveillance.alert") {
+      || ev.type === "hud.click_through" || ev.type === "voice.wake" || ev.type === "system.alert"
+      || ev.type === "surveillance.alert") {
       refreshHud();
     }
     if (ev.type === "hud.camera") applyCamFromHud(ev.payload || {});
     if (ev.type === "hud.visor") applyVisor(!!(ev.payload && ev.payload.enabled), { remote: true });
+    if (ev.type === "hud.click_through") applyClickThrough(!!(ev.payload && ev.payload.enabled), { remote: true });
     if (ev.type === "voice.wake") {
       q.focus();
       document.body.dataset.mode = "listening";
+    }
+    if (ev.type === "hud.speak") {
+      /* TTS arrives as WAV on chat/transcript responses; barge-in is local. */
     }
     if (ev.type === "hud.highlight") {
       const box = document.getElementById("screen-highlight");
@@ -481,6 +491,154 @@
       }
     }
     if (enabled && currentView !== "home") paintView("home");
+    if (!enabled) applyClickThrough(false, { remote: true });
+  }
+
+  async function applyClickThrough(enabled, opts) {
+    const remote = opts && opts.remote;
+    document.body.dataset.through = enabled ? "on" : "off";
+    const btn = document.getElementById("btn-through");
+    if (btn) btn.classList.toggle("visor-on", enabled);
+    const api = tauri();
+    if (api && api.core && api.core.invoke) {
+      try { await api.core.invoke("set_click_through", { enabled }); } catch { /* ignore */ }
+    }
+    if (!remote) {
+      try {
+        const base = await brainUrl();
+        await fetch(base + "/api/hud/click-through", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled }),
+        });
+      } catch (err) {
+        console.error("click-through", err);
+      }
+    }
+  }
+
+  function bargeIn() {
+    if (!ttsAudio) return;
+    try {
+      ttsAudio.pause();
+      ttsAudio.currentTime = 0;
+    } catch { /* ignore */ }
+    ttsAudio = null;
+  }
+
+  function playReplyAudio(b64) {
+    if (!b64 || (mute && mute.checked)) return;
+    bargeIn();
+    ttsAudio = new Audio("data:audio/wav;base64," + b64);
+    ttsAudio.play().catch(() => {});
+  }
+
+  function speechCtor() {
+    return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  }
+
+  function setVoiceUi(on) {
+    voiceListening = !!on;
+    document.body.classList.toggle("listening-voice", voiceListening);
+    ["btn-mic", "btn-mic-chat", "btn-mic-home"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = voiceListening ? "Oyendo…" : (id === "btn-mic-home" ? "Escuchar" : "Mic");
+    });
+  }
+
+  async function postWake(phrase) {
+    try {
+      const base = await brainUrl();
+      await fetch(base + "/api/voice/wake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phrase: phrase || "jarvis" }),
+      });
+    } catch (err) {
+      console.error("wake", err);
+    }
+  }
+
+  async function postTranscript(text) {
+    add("you", text);
+    try {
+      const base = await brainUrl();
+      const r = await fetch(base + "/api/voice/transcript", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || r.statusText);
+      add("jarvis", data.reply || "(sin texto)");
+      applyHud(data.hud);
+      playReplyAudio(data.audio_wav_b64);
+    } catch (err) {
+      add("err", String(err.message || err));
+    }
+  }
+
+  function handleHeard(raw) {
+    const text = (raw || "").trim();
+    if (!text) return;
+    const woke = WAKE_RE.test(text);
+    const rest = text.replace(WAKE_RE, "").trim();
+    if (woke) postWake("jarvis");
+    if (rest) postTranscript(rest);
+    else if (!woke) postTranscript(text);
+  }
+
+  function stopListen() {
+    if (voiceRec) {
+      try { voiceRec.onend = null; voiceRec.stop(); } catch { /* ignore */ }
+      voiceRec = null;
+    }
+    setVoiceUi(false);
+  }
+
+  function startListen() {
+    const Ctor = speechCtor();
+    if (!Ctor) {
+      add("err", "Web Speech no está en este motor. Escribe o usa POST /api/voice/transcript.");
+      q.focus();
+      return;
+    }
+    bargeIn();
+    stopListen();
+    const rec = new Ctor();
+    rec.lang = "es-ES";
+    rec.interimResults = false;
+    rec.continuous = true;
+    rec.onspeechstart = () => bargeIn();
+    rec.onresult = (ev) => {
+      const last = ev.results[ev.results.length - 1];
+      if (!last || !last.isFinal) return;
+      handleHeard(last[0] && last[0].transcript);
+    };
+    rec.onerror = (ev) => {
+      if (ev.error === "not-allowed") add("err", "micrófono: permiso denegado");
+      else if (ev.error !== "no-speech" && ev.error !== "aborted") {
+        add("err", "voz: " + ev.error);
+      }
+    };
+    rec.onend = () => {
+      if (voiceListening && voiceRec === rec) {
+        try { rec.start(); } catch { setVoiceUi(false); }
+      }
+    };
+    voiceRec = rec;
+    try {
+      rec.start();
+      setVoiceUi(true);
+    } catch (err) {
+      add("err", String(err.message || err));
+      setVoiceUi(false);
+    }
+  }
+
+  function toggleListen() {
+    if (voiceListening) stopListen();
+    else startListen();
   }
 
   let lastPresence = null;
@@ -692,10 +850,7 @@
       if (!data.ok) throw new Error(data.error || r.statusText);
       add("jarvis", data.reply || "(sin texto)");
       applyHud(data.hud);
-      if (data.audio_wav_b64 && !mute.checked) {
-        const audio = new Audio("data:audio/wav;base64," + data.audio_wav_b64);
-        audio.play().catch(() => {});
-      }
+      playReplyAudio(data.audio_wav_b64);
     } catch (err) {
       add("err", String(err.message || err));
     } finally {
@@ -752,7 +907,9 @@
       const voice = s.voice || {};
       const voiceLine = document.getElementById("voice-line");
       if (voiceLine) {
-        voiceLine.textContent = "Voz: wake " + (voice.wake || "?") + " · STT " + (voice.stt || "?");
+        voiceLine.textContent = "Voz: wake " + (voice.wake || "?")
+          + " · STT " + (voice.stt || "?")
+          + (voice.barge_in ? " · barge-in" : "");
       }
       const surv = s.surv || {};
       const survLine = document.getElementById("surv-line");
@@ -762,6 +919,13 @@
           + " · " + (surv.policy || "external")
           + (surv.last ? " · último " + (surv.last.text || "") : "");
       }
+      const proto = document.getElementById("surv-proto");
+      if (proto) {
+        proto.textContent = "Detector: " + (surv.ingest || "POST /api/surveillance/alert")
+          + " · " + ((surv.fields || []).join(", ") || "kind, camera, score, text");
+      }
+      const armBtn = document.getElementById("btn-arm");
+      if (armBtn) armBtn.textContent = surv.armed ? "Desarmar puerta" : "Armar puerta";
     } catch (err) {
       document.getElementById("sys-stats").textContent = String(err);
     }
@@ -793,14 +957,18 @@
           const row = document.createElement("div");
           row.className = "entity";
           row.innerHTML = "<span>" + (ent.name || ent.entity_id) + "</span><span>" + (ent.state || "") + "</span>";
-          if (domain === "light" || domain === "switch") {
+          if (domain === "light" || domain === "switch" || domain === "scene") {
             const toggle = document.createElement("button");
-            toggle.textContent = "toggle";
+            toggle.textContent = domain === "scene" ? "activar" : "toggle";
             toggle.onclick = async () => {
               const r = await fetch(base + "/api/ha/call", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ domain, service: "toggle", entity_id: ent.entity_id }),
+                body: JSON.stringify({
+                  domain,
+                  service: domain === "scene" ? "turn_on" : "toggle",
+                  entity_id: ent.entity_id,
+                }),
               });
               const data = await r.json();
               document.getElementById("ha-msg").textContent = data.ok ? "ok" : (data.error || "fail");
@@ -842,6 +1010,32 @@
   document.getElementById("btn-visor").addEventListener("click", () => {
     applyVisor(document.body.dataset.visor !== "on");
   });
+  document.getElementById("btn-through").addEventListener("click", () => {
+    applyClickThrough(document.body.dataset.through !== "on");
+  });
+  ["btn-mic", "btn-mic-chat", "btn-mic-home"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("click", toggleListen);
+  });
+  const armBtn = document.getElementById("btn-arm");
+  if (armBtn) {
+    armBtn.addEventListener("click", async () => {
+      const base = await brainUrl();
+      const cur = await fetch(base + "/api/surveillance").then((r) => r.json());
+      const r = await fetch(base + "/api/surveillance/arm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ armed: !cur.armed }),
+      });
+      const data = await r.json();
+      const line = document.getElementById("surv-line");
+      if (r.status === 403) {
+        if (line) line.textContent = "Puerta: Howdy " + ((data.auth && data.auth.error) || "auth");
+        return;
+      }
+      loadSystem();
+    });
+  }
   document.getElementById("btn-cam").addEventListener("click", toggleCamButton);
   document.getElementById("btn-cam-home").addEventListener("click", (ev) => {
     ev.stopPropagation();

@@ -80,7 +80,9 @@ def test_voice_wake_and_surv_gate() -> None:
     wake = client.post("/api/voice/wake", json={"phrase": "jarvis"})
     assert wake.status_code == 200
     assert wake.json()["operational"] == "listening"
-    assert client.get("/api/voice").json()["wake"] == "stub"
+    assert client.get("/api/voice").json()["wake"] == "hud-phrase"
+    assert client.get("/api/voice").json()["stt"] == "web-speech"
+    assert client.get("/api/voice").json()["barge_in"] is True
     arm = client.post("/api/surveillance/arm", json={"armed": True})
     assert arm.status_code == 403
     alert = client.post("/api/surveillance/alert", json={"camera": "door", "text": "visita"})

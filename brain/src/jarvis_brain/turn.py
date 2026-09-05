@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import asyncio
 
+from jarvis_brain.auth.howdy import AuthGate
 from jarvis_brain.bus.envelope import Event, new_event
 from jarvis_brain.bus.server import EventBus
 from jarvis_brain.config import BrainConfig
+from jarvis_brain.ha.client import HomeAssistant
 from jarvis_brain.hermes.client import HermesClient, HermesError
+from jarvis_brain.map.weather import attach_weather
 from jarvis_brain.memory.store import LocalMemory
 from jarvis_brain.persona.overlay import choose_persona, persona_overlay
 from jarvis_brain.tools.phrase_map import match_phrase
 from jarvis_brain.vision.service import VisionService
+from jarvis_brain.vision.urls import extract_urls, open_urls
 from jarvis_brain.voice.tts import LocalTTS, PcmChunk
 
 
@@ -38,6 +42,8 @@ async def run_text_turn(
     voice: str | None = None,
     memory: LocalMemory | None = None,
     vision: VisionService | None = None,
+    auth: AuthGate | None = None,
+    ha: HomeAssistant | None = None,
 ) -> str:
     """One text turn: phrase-map, memory, Hermes, optional speak."""
     persona = choose_persona(user_text)
@@ -114,6 +120,73 @@ async def run_text_turn(
         elif hit.action == "memory.forget" and memory is not None:
             removed = memory.forget(query=str(hit.payload.get("query") or ""))
             reply = f"Olvidado ({removed})." if removed else "No había nada con eso."
+        elif hit.action == "memory.list":
+            facts = memory.list_facts() if memory is not None else []
+            if not facts:
+                reply = "No tengo hechos anotados. Di «recuerda que …»."
+            else:
+                lines = [f"Recuerdo {len(facts)} hecho(s):"]
+                lines.extend(f"- {item['text']}" for item in facts[:12])
+                reply = "\n".join(lines)
+        elif hit.action == "map.brief":
+            reply = attach_weather(reply, str(hit.payload.get("q") or ""))
+        elif hit.action == "ha.scene":
+            entity = str(hit.payload.get("entity_id") or "")
+            if ha is None or not ha.cfg.configured:
+                reply = "Casa no configurada. URL y token en la vista Casa."
+            elif auth is not None:
+                gate = auth.require("ha.command", reason="ha.command")
+                if not gate.ok:
+                    reply = "Howdy: hace falta cara para escenas."
+                    await bus.publish(
+                        new_event(
+                            "auth.challenge",
+                            {"reason": "ha.command", "tool": "ha.command"},
+                            source="brain",
+                        )
+                    )
+                    await bus.publish(new_event("auth.result", gate.to_payload(), source="auth"))
+                else:
+                    try:
+                        ha.call("scene", "turn_on", entity_id=entity)
+                        reply = f"Escena {entity}."
+                    except Exception as exc:
+                        reply = f"No pude activar {entity}: {exc}"
+            else:
+                try:
+                    ha.call("scene", "turn_on", entity_id=entity)
+                    reply = f"Escena {entity}."
+                except Exception as exc:
+                    reply = f"No pude activar {entity}: {exc}"
+        elif hit.action == "vision.open":
+            ocr = vision.last_shot.ocr if vision and vision.last_shot else ""
+            urls = extract_urls(ocr)
+            if not urls:
+                reply = "No hay URLs en la última captura."
+            elif auth is not None:
+                gate = auth.require("vision.open", reason="vision.open")
+                if not gate.ok:
+                    reply = "Howdy: hace falta cara para abrir enlaces."
+                    await bus.publish(
+                        new_event(
+                            "auth.challenge",
+                            {"reason": "vision.open", "tool": "vision.open"},
+                            source="brain",
+                        )
+                    )
+                    await bus.publish(new_event("auth.result", gate.to_payload(), source="auth"))
+                else:
+                    opened = open_urls(urls)
+                    reply = (
+                        "Abrí: " + ", ".join(opened)
+                        if opened
+                        else "xdg-open no disponible."
+                    )
+            else:
+                opened = open_urls(urls)
+                reply = (
+                    "Abrí: " + ", ".join(opened) if opened else "xdg-open no disponible."
+                )
         if hit.handoff:
             await bus.publish(
                 new_event("hud.show_view", {"view": "vision", "visible": True}, source="brain")
@@ -160,6 +233,14 @@ async def run_text_turn(
                 await bus.publish(
                     new_event(
                         "hud.visor",
+                        {"enabled": bool(hit.payload.get("enabled"))},
+                        source="brain",
+                    )
+                )
+            elif hit.action == "hud.click_through":
+                await bus.publish(
+                    new_event(
+                        "hud.click_through",
                         {"enabled": bool(hit.payload.get("enabled"))},
                         source="brain",
                     )

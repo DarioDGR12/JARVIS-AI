@@ -14,6 +14,9 @@ fn set_visor(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     };
     win.set_always_on_top(enabled)
         .map_err(|err| err.to_string())?;
+    if !enabled {
+        let _ = win.set_ignore_cursor_events(false);
+    }
     let size = if enabled {
         tauri::LogicalSize::new(440.0, 560.0)
     } else {
@@ -23,11 +26,21 @@ fn set_visor(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn set_click_through(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let Some(win) = app.get_webview_window("main") else {
+        return Ok(());
+    };
+    win.set_ignore_cursor_events(enabled)
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![brain_url, set_visor])
+        .invoke_handler(tauri::generate_handler![brain_url, set_visor, set_click_through])
         .setup(|app| {
             let show = MenuItem::with_id(app, "show", "Mostrar", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?;
@@ -43,6 +56,7 @@ pub fn run() {
                     "quit" => app.exit(0),
                     "show" => {
                         if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.set_ignore_cursor_events(false);
                             let _ = win.show();
                             let _ = win.set_focus();
                         }

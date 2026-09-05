@@ -6,6 +6,9 @@ from typing import Any
 from jarvis_brain.bus.envelope import Event
 
 
+PROTOCOL_FIELDS = ("kind", "camera", "score", "text", "timestamp")
+
+
 class SurveillanceService:
     """Door agent. YOLO stays out of tree (AGPL). We only ingest alerts."""
 
@@ -19,6 +22,8 @@ class SurveillanceService:
             "armed": self.armed,
             "detector": "external",
             "policy": "yolo-out-of-tree",
+            "ingest": "POST /api/surveillance/alert",
+            "fields": list(PROTOCOL_FIELDS),
             "last": self.last_alert,
             "error": self.last_error,
         }

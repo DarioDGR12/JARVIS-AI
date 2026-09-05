@@ -29,6 +29,8 @@
       <button type="button" data-view="vision">Visión</button>
       <button type="button" data-view="settings">Ajustes</button>
       <button type="button" id="btn-visor">Visor</button>
+      <button type="button" id="btn-through" title="Clics atraviesan la ventana">Clics</button>
+      <button type="button" id="btn-mic" title="Escuchar">Mic</button>
     </nav>
   </header>
 
@@ -63,6 +65,9 @@
       <article id="last-speak" class="panel">
         <h3>Voz</h3>
         <p id="speak-body">Silencio.</p>
+        <div class="row tight">
+          <button type="button" id="btn-mic-home">Escuchar</button>
+        </div>
       </article>
       <article id="toasts" class="panel">
         <h3>Avisos</h3>
@@ -76,8 +81,9 @@
       <div class="hint" id="hint">Escribe. JARVIS responde y habla en este equipo.</div>
     </div>
     <form id="f">
-      <input id="q" autocomplete="off" placeholder="Escribe. Enter envía." />
+      <input id="q" autocomplete="off" placeholder="Escribe o pulsa Mic. Enter envía." />
       <label class="mute"><input type="checkbox" id="mute" /> Silencio</label>
+      <button type="button" id="btn-mic-chat" title="Escuchar">Mic</button>
       <button type="submit">Enviar</button>
     </form>
   </main>
@@ -89,6 +95,10 @@
     <p class="lead" id="cam-line">Webcam HUD: …</p>
     <p class="lead" id="voice-line">Voz: …</p>
     <p class="lead" id="surv-line">Puerta: …</p>
+    <p class="lead" id="surv-proto">Detector: POST /api/surveillance/alert · kind, camera, score, text</p>
+    <div class="row tight">
+      <button type="button" id="btn-arm">Armar puerta</button>
+    </div>
   </section>
 
   <section id="ha-view" hidden>

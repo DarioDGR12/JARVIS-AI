@@ -26,8 +26,9 @@ from jarvis_brain.product.start import ensure_stack
 from jarvis_brain.surveillance.service import SurveillanceService
 from jarvis_brain.tools.stats import system_stats
 from jarvis_brain.tools.watchdog import Watchdog
-from jarvis_brain.turn import run_text_turn
+from jarvis_brain.turn import run_text_turn, speak_reply
 from jarvis_brain.vision.service import VisionService
+from jarvis_brain.vision.urls import extract_urls, open_urls
 from jarvis_brain.voice.inbound import engine_status as voice_engine_status
 from jarvis_brain.voice.tts import LocalTTS
 
@@ -85,24 +86,51 @@ class ProductRuntime:
         if self._officer_task is None or self._officer_task.done():
             self._officer_task = asyncio.create_task(self._officer_loop())
 
+    async def officer_tick(self) -> list[dict]:
+        alerts = list(self.watchdog.check())
+        hermes_ok = True
+        try:
+            await self.hermes.ping()
+        except Exception:
+            hermes_ok = False
+        noted = self.watchdog.note(
+            "hermes",
+            "Hermes",
+            "Hermes no responde.",
+            tripped=not hermes_ok,
+        )
+        if noted:
+            alerts.append(noted)
+        for alert in alerts:
+            await self.bus.publish(new_event("system.alert", alert, source="officer"))
+            await self.bus.publish(
+                new_event(
+                    "hud.display",
+                    {"kind": "alert", "content": alert["content"], "title": alert["title"]},
+                    source="officer",
+                )
+            )
+            if self.tts and not self.lock.locked():
+                try:
+                    async with self.lock:
+                        await speak_reply(
+                            self.tts,
+                            self.bus,
+                            str(alert["content"]),
+                            voice="jarvis",
+                            session_id=self.session_id,
+                        )
+                except Exception:
+                    pass
+        return alerts
+
     async def _officer_loop(self) -> None:
         while True:
             await asyncio.sleep(20)
             try:
-                alerts = self.watchdog.check()
+                await self.officer_tick()
             except Exception:
                 continue
-            for alert in alerts:
-                await self.bus.publish(
-                    new_event("system.alert", alert, source="officer")
-                )
-                await self.bus.publish(
-                    new_event(
-                        "hud.display",
-                        {"kind": "alert", "content": alert["content"], "title": alert["title"]},
-                        source="officer",
-                    )
-                )
 
     async def _watch_loop(self) -> None:
         while self.vision.watch_enabled:
@@ -241,6 +269,8 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
                     tts=runtime.tts,
                     memory=runtime.memory,
                     vision=runtime.vision,
+                    auth=runtime.auth,
+                    ha=runtime.ha,
                 )
             except HermesError as exc:
                 return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
@@ -316,6 +346,18 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
     async def hud_visor(body: dict | None = None) -> dict:
         enabled = bool((body or {}).get("enabled"))
         await runtime.bus.publish(new_event("hud.visor", {"enabled": enabled}, source="hud"))
+        if not enabled and runtime.hud.click_through:
+            await runtime.bus.publish(
+                new_event("hud.click_through", {"enabled": False}, source="hud")
+            )
+        return {"ok": True, **runtime.hud.snapshot()}
+
+    @app.post("/api/hud/click-through")
+    async def hud_click_through(body: dict | None = None) -> dict:
+        enabled = bool((body or {}).get("enabled"))
+        await runtime.bus.publish(
+            new_event("hud.click_through", {"enabled": enabled}, source="hud")
+        )
         return {"ok": True, **runtime.hud.snapshot()}
 
     @app.post("/api/hud/presence")
@@ -328,6 +370,25 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
                 source="hud",
             )
         )
+        if not present:
+            await runtime.bus.publish(
+                new_event(
+                    "hud.set_mode",
+                    {"operational": "standby", "visual": runtime.hud.visual},
+                    source="brain",
+                )
+            )
+            await runtime.bus.publish(
+                new_event(
+                    "hud.display",
+                    {
+                        "kind": "toast",
+                        "content": "Standby · puesto vacío",
+                        "title": "presencia",
+                    },
+                    source="brain",
+                )
+            )
         return {"ok": True, **runtime.hud.snapshot()}
 
     @app.get("/api/map")
@@ -453,6 +514,33 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             runtime.ensure_watch_task()
         return JSONResponse({"ok": True, **runtime.vision.snapshot()})
 
+    @app.get("/api/vision/urls")
+    async def vision_urls() -> dict:
+        ocr = runtime.vision.last_shot.ocr if runtime.vision.last_shot else ""
+        return {"ok": True, "urls": extract_urls(ocr)}
+
+    @app.post("/api/vision/open")
+    async def vision_open(body: dict | None = None) -> JSONResponse:
+        gate = runtime.auth.require("vision.open", reason="vision.open")
+        if not gate.ok:
+            await runtime.bus.publish(
+                new_event(
+                    "auth.challenge",
+                    {"reason": "vision.open", "tool": "vision.open"},
+                    source="brain",
+                )
+            )
+            await runtime.bus.publish(new_event("auth.result", gate.to_payload(), source="auth"))
+            return JSONResponse(
+                {"ok": False, "error": "auth required", "auth": gate.to_payload()},
+                status_code=403,
+            )
+        requested = str((body or {}).get("url") or "").strip()
+        ocr = runtime.vision.last_shot.ocr if runtime.vision.last_shot else ""
+        urls = [requested] if requested else extract_urls(ocr)
+        opened = open_urls(urls)
+        return JSONResponse({"ok": True, "opened": opened, "urls": extract_urls(" ".join(urls))})
+
     @app.get("/api/system")
     async def system() -> dict:
         runtime.ensure_officer_task()
@@ -503,11 +591,23 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
                     tts=runtime.tts,
                     memory=runtime.memory,
                     vision=runtime.vision,
+                    auth=runtime.auth,
+                    ha=runtime.ha,
                 )
             except HermesError as exc:
                 return JSONResponse({"ok": False, "error": str(exc)}, status_code=502)
+        audio = None
+        if runtime.tts and runtime.tts.last_chunk and runtime.tts.last_chunk.pcm:
+            audio = _wav_b64(
+                runtime.tts.last_chunk.pcm, runtime.tts.last_chunk.sample_rate
+            )
         return JSONResponse(
-            {"ok": True, "reply": reply, "hud": runtime.hud.snapshot()}
+            {
+                "ok": True,
+                "reply": reply,
+                "audio_wav_b64": audio,
+                "hud": runtime.hud.snapshot(),
+            }
         )
 
     @app.get("/api/surveillance")
@@ -601,7 +701,7 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             }
             for s in states
             if str(s.get("entity_id") or "").split(".", 1)[0]
-            in {"light", "switch", "binary_sensor", "sensor", "lock", "climate"}
+            in {"light", "switch", "binary_sensor", "sensor", "lock", "climate", "scene"}
         ]
         return JSONResponse({"ok": True, "states": slim[:80]})
 
@@ -635,9 +735,11 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
         return JSONResponse({"ok": True, "configured": runtime.ha.cfg.configured})
 
     @app.get("/api/memory")
-    async def memory_search(q: str = "", k: int = 5) -> dict:
+    async def memory_search(q: str = "", k: int = 5, facts: bool = False) -> dict:
         if runtime.memory is None:
             return {"ok": True, "items": []}
+        if facts:
+            return {"ok": True, "items": runtime.memory.list_facts(k=max(k, 12))}
         return {"ok": True, "items": runtime.memory.search(q, k=k)}
 
     @app.post("/api/memory/forget")

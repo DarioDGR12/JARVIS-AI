@@ -29,6 +29,7 @@ SENSITIVE = frozenset(
         "fs.write",
         "shell",
         "vision.watch",
+        "vision.open",
         "surveillance.arm",
     }
 )

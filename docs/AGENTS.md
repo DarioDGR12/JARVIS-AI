@@ -3,17 +3,17 @@
 Nueve agentes. Cada ronda investiga, corta un slice usable y pasa QA.  
 **No** YOLO en el árbol (AGPL). **No** `Memory()` default (OpenAI + PostHog).
 
-| ID | Frente | Ronda 1 |
-|---|---|---|
-| A-VOICE | Wake + STT + barge-in | Contrato + API. Sin modelos. |
-| A-VISOR | Overlay always-on-top | Visor compacto + Tauri `set_always_on_top` |
-| A-SIGHT | Pantalla → Hermes | `explica la pantalla` hace handoff con OCR |
-| A-OFFICER | Watchdog proactivo | Load/RAM/temp + cooldown + toasts |
-| A-PRESENCE | Presencia webcam | Luma del frame → `hud.presence` |
-| A-TOWER | Torre HA | «cómo está la casa» + entidades por dominio |
-| A-MEM | Memoria | `recuerda que` / `olvida` sobre JSONL |
-| A-BRIEF | Briefing globo | Extracto SENTINEL, no live |
-| A-DOOR | Puerta | Ingest de alerta. Armar pide Howdy. |
+| ID | Frente | Ronda 1 | Ronda 2 |
+|---|---|---|---|
+| A-VOICE | Wake + STT + barge-in | Contrato + API. Sin modelos. | Mic HUD + Web Speech + barge-in |
+| A-VISOR | Overlay always-on-top | Visor compacto + Tauri `set_always_on_top` | Click-through (`set_ignore_cursor_events`) |
+| A-SIGHT | Pantalla → Hermes | `explica la pantalla` hace handoff con OCR | Abrir URLs del OCR (Howdy) |
+| A-OFFICER | Watchdog proactivo | Load/RAM/temp + cooldown + toasts | Hermes caído + hablar alertas |
+| A-PRESENCE | Presencia webcam | Luma del frame → `hud.presence` | Standby al irte (sin apagar cam) |
+| A-TOWER | Torre HA | «cómo está la casa» + entidades por dominio | «escena noche» + Howdy |
+| A-MEM | Memoria | `recuerda que` / `olvida` sobre JSONL | «qué recuerdas» lista hechos |
+| A-BRIEF | Briefing globo | Extracto SENTINEL + Tierra NASA | Clima Open-Meteo (offline = skip) |
+| A-DOOR | Puerta | Ingest de alerta. Armar pide Howdy. | Protocolo detector + script + HUD |
 
 ---
 
@@ -65,3 +65,52 @@ Nueve agentes. Cada ronda investiga, corta un slice usable y pasa QA.
 **Siguiente:** proceso hijo YOLO fuera del repo.
 
 **Tests ronda 1:** 95 passed.
+
+---
+
+## Ronda 2 — resultados
+
+### A-VOICE
+**Investiga:** Cargar openWakeWord + faster-whisper en esta VM (sin mic real) no da un producto. Chrome/WebKit sí tienen Web Speech.  
+**Slice:** `GET /api/voice` (`wake=hud-phrase`, `stt=web-speech`, `barge_in=true`). Botón Mic. «jarvis …» → wake + transcript. Hablar corta el WAV.  
+**Siguiente:** openWakeWord `hey_jarvis` + whisper local.
+
+### A-VISOR
+**Investiga:** Click-through es de ventana entera. Si está on, el ratón no recupera el HUD.  
+**Slice:** `set_click_through` + permiso Tauri. Frase «deja pasar los clics» / «captura los clics». Bandeja «Mostrar» quita ignore.  
+**Siguiente:** segunda ventana transparente / hit-test por región.
+
+### A-SIGHT
+**Investiga:** El OCR a veces trae URLs. Abrirlas es `xdg-open` = `shell`.  
+**Slice:** «abre el enlace» + `POST /api/vision/open`. Howdy `vision.open`. Solo http(s).  
+**Siguiente:** clic/teclado en regiones.
+
+### A-OFFICER
+**Investiga:** Hermes caído se veía solo en el titlebar.  
+**Slice:** `officer_tick` ping + cooldown. Alertas se hablan si hay TTS y el turno está libre.  
+**Siguiente:** umbrales por perfil / no hablar de noche.
+
+### A-PRESENCE
+**Investiga:** Irse no cambiaba el anillo. Apagar la cam al irte rompe Howdy.  
+**Slice:** `present=false` → standby + toast + anillo apagado. La webcam sigue.  
+**Siguiente:** Howdy al mirar.
+
+### A-TOWER
+**Investiga:** Escenas HA = `scene.turn_on`. Write sensible.  
+**Slice:** «escena noche» → `scene.noche`. Howdy. Botón activar en Casa.  
+**Siguiente:** schematic.
+
+### A-MEM
+**Investiga:** Los hechos existían; nadie los listaba.  
+**Slice:** «qué recuerdas» / `GET /api/memory?facts=1`. Sigue sin `Memory()`.  
+**Siguiente:** mem0 OSS (Qdrant + Ollama, telemetría off).
+
+### A-BRIEF
+**Investiga:** Open-Meteo no pide key.  
+**Slice:** briefing de sitio + una línea de clima. Si la red falla, el extracto offline sigue.  
+**Siguiente:** un feed vivo.
+
+### A-DOOR
+**Investiga:** Los detectores externos no tenían contrato.  
+**Slice:** snapshot `ingest` + `fields`. `brain/scripts/surv_ingest.py`. Botón armar (Howdy).  
+**Siguiente:** proceso hijo YOLO fuera del repo.

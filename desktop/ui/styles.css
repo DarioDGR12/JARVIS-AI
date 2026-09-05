@@ -125,6 +125,14 @@ body[data-visor="on"] #home-view { max-width: none; padding: 10px; }
 body[data-visor="on"] #hud-side { width: 220px; }
 body[data-presence="1"] #cam-pip h3::after { content: " · piloto"; color: var(--cyan); }
 body[data-presence="0"] #cam-pip h3::after { content: " · vacío"; color: var(--mute); }
+body[data-presence="0"] #ring { opacity: 0.42; filter: saturate(0.45); }
+body[data-presence="0"] #core-label { color: var(--mute); }
+body[data-through="on"] #btn-through { color: var(--cyan); border-color: var(--cyan); }
+body.listening-voice #btn-mic,
+body.listening-voice #btn-mic-chat,
+body.listening-voice #btn-mic-home {
+  color: var(--cyan); border-color: var(--cyan);
+}
 #settings-view[hidden], #chat-view[hidden], #system-view[hidden],
 #ha-view[hidden], #home-view[hidden], #map-view[hidden], #vision-view[hidden] { display: none; }
 

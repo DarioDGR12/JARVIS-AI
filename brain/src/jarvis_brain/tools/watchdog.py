@@ -60,9 +60,31 @@ class Watchdog:
             )
         out: list[dict] = []
         for alert in alerts:
-            key = str(alert["id"])
-            if now - self._last.get(key, 0) < self.cooldown_s:
-                continue
-            self._last[key] = now
-            out.append(alert)
+            noted = self.note(
+                str(alert["id"]),
+                str(alert["title"]),
+                str(alert["content"]),
+                tripped=True,
+                now=now,
+            )
+            if noted:
+                out.append(noted)
         return out
+
+    def note(
+        self,
+        key: str,
+        title: str,
+        content: str,
+        *,
+        tripped: bool,
+        now: float | None = None,
+    ) -> dict | None:
+        """Cooldown-gated custom alert (Hermes down, etc.)."""
+        if not tripped:
+            return None
+        stamp = time.time() if now is None else now
+        if stamp - self._last.get(key, 0) < self.cooldown_s:
+            return None
+        self._last[key] = stamp
+        return {"id": key, "title": title, "content": content}

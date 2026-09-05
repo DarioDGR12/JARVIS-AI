@@ -40,7 +40,9 @@ class HudState:
     camera_error: str | None = None
     camera_device: str | None = None
     visor: bool = False
+    click_through: bool = False
     presence: bool | None = None
+    standby_empty: bool = False
     last_display: dict[str, Any] | None = None
     last_speak: dict[str, Any] | None = None
     toasts: list[dict[str, Any]] = field(default_factory=list)
@@ -57,7 +59,9 @@ class HudState:
             "camera_error": self.camera_error,
             "camera_device": self.camera_device,
             "visor": self.visor,
+            "click_through": self.click_through,
             "presence": self.presence,
+            "standby_empty": self.standby_empty,
             "last_display": self.last_display,
             "last_speak": self.last_speak,
             "toasts": list(self.toasts[-8:]),
@@ -129,8 +133,22 @@ class HudState:
                 self.camera_device = device or None
         elif event.type == "hud.visor":
             self.visor = bool(payload.get("enabled"))
+            if not self.visor:
+                self.click_through = False
+        elif event.type == "hud.click_through":
+            self.click_through = bool(payload.get("enabled"))
         elif event.type == "hud.presence":
-            self.presence = bool(payload.get("present"))
+            present = bool(payload.get("present"))
+            self.presence = present
+            self.standby_empty = not present
+            if not present and self.operational not in {
+                "alert",
+                "listening",
+                "thinking",
+                "speaking",
+                "tool",
+            }:
+                self.operational = "standby"
         elif event.type == "hud.ready":
             self.ready = True
         elif event.type == "brain.status":
