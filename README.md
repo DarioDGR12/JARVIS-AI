@@ -40,10 +40,10 @@ Sin key: `setup --demo`. Con key: el mismo producto, tu modelo. También se conf
 
 ## Qué hay
 
-HUD (inicio, chat, sistema, casa, mapa, visión, ajustes), globo SENTINEL, captura de pantalla, **webcam del HUD** (una sola `getUserMedia`; Howdy la suelta con `hold` para V4L2). Howdy / HA / phrase-map / stats / memoria local JSON.
+HUD (inicio, chat, sistema, casa, mapa, visión, ajustes), globo SENTINEL, captura de pantalla, **webcam del HUD** (una sola `getUserMedia`; Howdy la suelta con `hold` para V4L2). Howdy / HA / phrase-map / stats / memoria JSONL + mem0 OSS opcional (Qdrant + Ollama). Un feed HLS (NASA TV).
 
 ## Qué no está (aún)
 
-openWakeWord / whisper local (el HUD usa Web Speech), gestos MediaPipe, YOLO embebido, mem0 Cloud. Puerta = ingest externo. Ver [docs/AGENTS.md](docs/AGENTS.md).
+Gestos MediaPipe, YOLO embebido (el hijo va fuera: `JARVIS_YOLO_DETECT`). mem0 Cloud. Whisper/OWW = extra `[stt]`. Ver [docs/AGENTS.md](docs/AGENTS.md).
 
 Licencia Apache-2.0. Plan largo: [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md).

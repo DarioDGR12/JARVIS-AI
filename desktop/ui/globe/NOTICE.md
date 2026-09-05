@@ -20,7 +20,12 @@ and fight the HUD chrome. License of the upstream project is still MIT.
 ## Data
 
 `feeds.json` is a short curated city list written for this repo (not the
-WebcamMap ~10k dump, not ODbL). Live YouTube/HLS are out of this slice.
+WebcamMap ~10k dump, not ODbL). One live HLS pin (NASA TV / ISS). Not 10k cams.
+
+## Live player
+
+- [hls.js 1.5.20](https://github.com/video-dev/hls.js) — Apache-2.0
+  File: `vendor/hls.min.js`. Loaded only when a live pin is opened.
 
 ## Earth texture
 

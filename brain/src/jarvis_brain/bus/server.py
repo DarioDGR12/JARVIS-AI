@@ -23,6 +23,7 @@ class EventBus:
         self._voice_clients: set[WebSocket] = set()
         self.voice_sample_rate = 16000
         self._lock = asyncio.Lock()
+        self.on_voice_pcm: Callable[[bytes], Awaitable[None] | None] | None = None
 
     def subscribe(self, handler: Handler) -> None:
         self._handlers.append(handler)
@@ -129,6 +130,11 @@ class EventBus:
                     message = await ws.receive()
                     if message.get("type") == "websocket.disconnect":
                         break
+                    raw = message.get("bytes")
+                    if raw and self.on_voice_pcm is not None:
+                        result = self.on_voice_pcm(raw)
+                        if asyncio.iscoroutine(result):
+                            await result
             except (WebSocketDisconnect, RuntimeError):
                 pass
             finally:

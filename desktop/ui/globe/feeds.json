@@ -17,5 +17,6 @@
   {"id": "seoul", "loc": "Seoul", "country": "KR", "lat": 37.5665, "lon": 126.978, "region": "asia", "tags": ["city"]},
   {"id": "singapore", "loc": "Singapore", "country": "SG", "lat": 1.3521, "lon": 103.8198, "region": "asia", "tags": ["city"]},
   {"id": "sydney", "loc": "Sydney", "country": "AU", "lat": -33.8688, "lon": 151.2093, "region": "oceania", "tags": ["city"]},
-  {"id": "dubai", "loc": "Dubai", "country": "AE", "lat": 25.2048, "lon": 55.2708, "region": "asia", "tags": ["city"]}
+  {"id": "dubai", "loc": "Dubai", "country": "AE", "lat": 25.2048, "lon": 55.2708, "region": "asia", "tags": ["city"]},
+  {"id": "iss", "loc": "NASA TV / ISS", "country": "ISS", "lat": 27.5, "lon": -80.55, "region": "orbit", "tags": ["live", "nasa"], "hls": "https://ntv1.akamaized.net/hls/live/2014075/NASA-NTV1-HLS/master.m3u8"}
 ]

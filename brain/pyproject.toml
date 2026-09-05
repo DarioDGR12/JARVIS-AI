@@ -17,6 +17,14 @@ tts = [
     # Chatterbox engine is local. Do NOT install realtimetts[all] (pulls ElevenLabs).
     "realtimetts[chatterbox]==0.8.5",
 ]
+stt = [
+    "faster-whisper>=1.1",
+    "openwakeword>=0.6",
+]
+memory = [
+    "mem0ai>=0.1.48",
+    "qdrant-client>=1.9",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.25",

@@ -71,6 +71,19 @@ class MapState:
                 "lon": payload.get("lon"),
                 "feed_id": payload.get("feed_id"),
             }
+        elif event.type == "map.live":
+            feed_id = str(payload.get("id") or "iss")
+            hit = next((f for f in self.feeds if str(f.get("id")) == feed_id), None)
+            if hit is None:
+                hit = next((f for f in self.feeds if f.get("live")), None)
+            if hit:
+                self.last_selection = {
+                    "lat": hit.get("lat"),
+                    "lon": hit.get("lon"),
+                    "feed_id": hit.get("id"),
+                    "live": True,
+                }
+                self.last_focus = {"lat": hit.get("lat"), "lon": hit.get("lon"), "zoom": 4}
         elif event.type == "map.feed_ready":
             if payload.get("count") is not None:
                 pass

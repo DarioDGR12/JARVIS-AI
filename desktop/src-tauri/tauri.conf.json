@@ -17,12 +17,13 @@
         "minWidth": 800,
         "minHeight": 560,
         "decorations": false,
+        "transparent": true,
         "resizable": true,
         "center": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; media-src 'self' blob: data: mediastream:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; script-src 'self'; frame-src 'self'; worker-src 'self' blob:"
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https:; media-src 'self' blob: data: mediastream: https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; script-src 'self'; frame-src 'self'; worker-src 'self' blob:"
     }
   },
   "bundle": {

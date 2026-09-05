@@ -29,6 +29,8 @@
     const lon = Number(raw.lon);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
     if (raw.unavailable || raw.invalidUrl || raw.duplicate) return null;
+    const hls = String(raw.hls || "").trim();
+    const img = String(raw.img || "").trim();
     return {
       id: String(raw.id || raw.loc || `${lat},${lon}`),
       loc: String(raw.loc || raw.id || "feed"),
@@ -37,6 +39,9 @@
       lon,
       region: String(raw.region || ""),
       tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
+      hls,
+      img,
+      live: !!(hls || img),
     };
   }
 
@@ -97,7 +102,13 @@
     selected = feed;
     setFocusLabel(feed.lat, feed.lon);
     if (backend) backend.draw();
-    post("map.selection", { lat: feed.lat, lon: feed.lon, feed_id: feed.id });
+    post("map.selection", {
+      lat: feed.lat,
+      lon: feed.lon,
+      feed_id: feed.id,
+      hls: feed.hls || "",
+      live: !!feed.live,
+    });
   }
 
   function worldFromLatLon(lat, lon) {
@@ -516,6 +527,14 @@
     else if (data.type === "map.show_feeds") showFeeds(payload);
     else if (data.type === "map.query") query(payload.q);
     else if (data.type === "map.add_feeds") addFeeds(payload.feeds || payload);
+    else if (data.type === "map.live") {
+      const id = String(payload.id || "iss");
+      const hit = feeds.find((f) => f.id === id) || feeds.find((f) => f.live);
+      if (hit) {
+        focusLatLon(hit.lat, hit.lon, 4);
+        selectFeed(hit);
+      }
+    }
   }
 
   function destroy() {

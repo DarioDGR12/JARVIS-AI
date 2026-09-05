@@ -43,6 +43,9 @@ CITIES: dict[str, tuple[float, float, str]] = {
     "seúl": (37.5665, 126.978, "KR"),
     "dubai": (25.2048, 55.2708, "AE"),
     "dubái": (25.2048, 55.2708, "AE"),
+    "iss": (27.5, -80.55, "ISS"),
+    "nasa": (29.55, -95.09, "US"),
+    "nasa tv": (29.55, -95.09, "US"),
     "istanbul": (41.0082, 28.9784, "TR"),
     "estambul": (41.0082, 28.9784, "TR"),
 }
@@ -72,6 +75,8 @@ def normalize_feed(raw: Any) -> dict[str, Any] | None:
         lon = float(raw["lon"])
     except (KeyError, TypeError, ValueError):
         return None
+    hls = str(raw.get("hls") or "").strip()
+    img = str(raw.get("img") or "").strip()
     return {
         "id": str(raw.get("id") or raw.get("loc") or f"{lat},{lon}"),
         "loc": str(raw.get("loc") or raw.get("id") or "feed"),
@@ -80,6 +85,9 @@ def normalize_feed(raw: Any) -> dict[str, Any] | None:
         "lon": lon,
         "region": str(raw.get("region") or ""),
         "tags": [str(t) for t in (raw.get("tags") or [])],
+        "hls": hls,
+        "img": img,
+        "live": bool(hls or img),
     }
 
 
@@ -111,6 +119,9 @@ def query_feeds(feeds: list[dict[str, Any]], q: str) -> list[dict[str, Any]]:
         blob = " ".join(
             str(feed.get(k) or "") for k in ("id", "loc", "country", "region")
         ).lower()
+        if "live" in needle and feed.get("live"):
+            hits.append(feed)
+            continue
         if needle in blob:
             hits.append(feed)
     return hits[:FEED_CAP]

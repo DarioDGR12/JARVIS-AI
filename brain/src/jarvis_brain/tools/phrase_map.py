@@ -110,6 +110,12 @@ _CLICK_THROUGH_OFF = re.compile(
     r"\b(captura (los )?clics|deja de atravesar|sin click.?through)\b",
     re.I,
 )
+_LIVE_FEED = re.compile(
+    r"\b(feed vivo|directo de la nasa|nasa tv|pon el (feed|directo)|abre (el )?iss|"
+    r"qu[eé] hay en la iss)\b"
+    r"|\biss\b(\s+(por favor|please))?$",
+    re.I,
+)
 _CLICK_THROUGH_ON = re.compile(
     r"\b(deja pasar( los)? clics|atraviesa|click.?through|ignora (los )?clics)\b",
     re.I,
@@ -194,6 +200,13 @@ def match_phrase(text: str) -> PhraseHit | None:
         return PhraseHit("hud.visor", "Visor off.", True, {"enabled": False})
     if _VISOR_ON.search(raw):
         return PhraseHit("hud.visor", "Visor on.", True, {"enabled": True})
+    if _LIVE_FEED.search(raw):
+        return PhraseHit(
+            "map.live",
+            "Abriendo el feed vivo.",
+            True,
+            {"id": "iss"},
+        )
     if _BRIEF_WORLD.search(raw):
         text = brief_world(None)
         return PhraseHit("map.brief", text, True, {"q": ""})

@@ -30,6 +30,7 @@ from jarvis_brain.turn import run_text_turn, speak_reply
 from jarvis_brain.vision.service import VisionService
 from jarvis_brain.vision.urls import extract_urls, open_urls
 from jarvis_brain.voice.inbound import engine_status as voice_engine_status
+from jarvis_brain.voice.local_engine import LocalVoiceEngine
 from jarvis_brain.voice.tts import LocalTTS
 
 
@@ -55,6 +56,7 @@ class ProductRuntime:
         vision: VisionService | None = None,
         surv: SurveillanceService | None = None,
         watchdog: Watchdog | None = None,
+        voice_engine: LocalVoiceEngine | None = None,
     ) -> None:
         self.cfg = cfg
         self.bus = bus
@@ -70,9 +72,12 @@ class ProductRuntime:
         self.vision = vision or VisionService()
         self.surv = surv or SurveillanceService()
         self.watchdog = watchdog or Watchdog()
+        self.voice_engine = voice_engine or LocalVoiceEngine()
         self.lock = asyncio.Lock()
         self._watch_task: asyncio.Task[None] | None = None
         self._officer_task: asyncio.Task[None] | None = None
+        self._door_task: asyncio.Task[None] | None = None
+        self.bus.on_voice_pcm = self._on_voice_pcm
         self.bus.subscribe(self.hud.apply)
         self.bus.subscribe(self.world.apply)
         self.bus.subscribe(self.vision.apply)
@@ -85,6 +90,59 @@ class ProductRuntime:
     def ensure_officer_task(self) -> None:
         if self._officer_task is None or self._officer_task.done():
             self._officer_task = asyncio.create_task(self._officer_loop())
+
+    def ensure_door_task(self) -> None:
+        if self._door_task is None or self._door_task.done():
+            self._door_task = asyncio.create_task(self._door_loop())
+
+    async def _on_voice_pcm(self, pcm: bytes) -> None:
+        hit = self.voice_engine.ingest_pcm(pcm, self.bus.voice_sample_rate)
+        if not hit:
+            return
+        if hit.get("kind") == "wake":
+            await self.bus.publish(new_event("voice.wake", {"phrase": hit.get("phrase") or "jarvis"}, source="voice"))
+            await self.bus.publish(
+                new_event("hud.set_mode", {"operational": "listening", "visual": self.hud.visual}, source="brain")
+            )
+            return
+        if hit.get("kind") == "transcript" and hit.get("text"):
+            await self.bus.publish(new_event("voice.transcript", {"text": hit["text"]}, source="voice"))
+            async with self.lock:
+                try:
+                    await run_text_turn(
+                        user_text=str(hit["text"]),
+                        cfg=self.cfg,
+                        hermes=self.hermes,
+                        bus=self.bus,
+                        session_id=self.session_id,
+                        tts=self.tts,
+                        memory=self.memory,
+                        vision=self.vision,
+                        auth=self.auth,
+                        ha=self.ha,
+                    )
+                except HermesError:
+                    pass
+
+    async def _door_loop(self) -> None:
+        while self.surv.armed:
+            await asyncio.sleep(2.5)
+            if not self.surv.armed:
+                break
+            try:
+                detections = await asyncio.to_thread(self.surv.child.tick)
+            except Exception:
+                continue
+            for det in detections:
+                alert = self.surv.ingest(det)
+                await self.bus.publish(new_event("surveillance.alert", alert, source="surv"))
+                await self.bus.publish(
+                    new_event(
+                        "hud.display",
+                        {"kind": "alert", "content": alert["text"], "title": alert["camera"]},
+                        source="surv",
+                    )
+                )
 
     async def officer_tick(self) -> list[dict]:
         alerts = list(self.watchdog.check())
@@ -197,7 +255,7 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             "hud": runtime.hud.snapshot(),
             "map": runtime.world.snapshot(),
             "vision": runtime.vision.snapshot(),
-            "voice": voice_engine_status(),
+            "voice": voice_engine_status(runtime.voice_engine),
             "surv": runtime.surv.snapshot(),
             "ha": {"configured": runtime.ha.cfg.configured, "up": False},
             "bus": {
@@ -393,7 +451,13 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
 
     @app.get("/api/map")
     async def map_state() -> dict:
-        return {"ok": True, **runtime.world.snapshot(), "feeds": runtime.world.visible}
+        live = [f for f in runtime.world.feeds if f.get("live")]
+        return {
+            "ok": True,
+            **runtime.world.snapshot(),
+            "feeds": runtime.world.visible,
+            "live": live,
+        }
 
     @app.post("/api/map/focus")
     async def map_focus(body: dict) -> JSONResponse:
@@ -549,13 +613,13 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             "stats": system_stats(),
             "auth": runtime.auth.status().to_payload(),
             "surv": runtime.surv.snapshot(),
-            "voice": voice_engine_status(),
+            "voice": voice_engine_status(runtime.voice_engine),
             "hud": runtime.hud.snapshot(),
         }
 
     @app.get("/api/voice")
     async def voice_state() -> dict:
-        return {"ok": True, **voice_engine_status()}
+        return {"ok": True, **voice_engine_status(runtime.voice_engine)}
 
     @app.post("/api/voice/wake")
     async def voice_wake(body: dict | None = None) -> dict:
@@ -610,6 +674,25 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             }
         )
 
+    @app.post("/api/voice/pcm")
+    async def voice_pcm(body: dict | None = None) -> JSONResponse:
+        raw = str((body or {}).get("pcm_b64") or "")
+        try:
+            pcm = base64.b64decode(raw) if raw else b""
+        except Exception:
+            return JSONResponse({"ok": False, "error": "bad pcm"}, status_code=400)
+        rate = int((body or {}).get("sample_rate") or runtime.bus.voice_sample_rate)
+        hit = runtime.voice_engine.ingest_pcm(pcm, rate)
+        if hit and hit.get("kind") == "wake":
+            await runtime.bus.publish(
+                new_event("voice.wake", {"phrase": hit.get("phrase") or "jarvis"}, source="voice")
+            )
+        if hit and hit.get("kind") == "transcript" and hit.get("text"):
+            await runtime.bus.publish(
+                new_event("voice.transcript", {"text": hit["text"]}, source="voice")
+            )
+        return JSONResponse({"ok": True, "hit": hit, **runtime.voice_engine.snapshot()})
+
     @app.get("/api/surveillance")
     async def surv_state() -> dict:
         return {"ok": True, **runtime.surv.snapshot()}
@@ -640,6 +723,8 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
         await runtime.bus.publish(
             new_event("surveillance.arm", {"armed": armed}, source="hud")
         )
+        if armed:
+            runtime.ensure_door_task()
         return JSONResponse({"ok": True, **runtime.surv.snapshot()})
 
     @app.post("/api/surveillance/alert")
@@ -738,9 +823,10 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
     async def memory_search(q: str = "", k: int = 5, facts: bool = False) -> dict:
         if runtime.memory is None:
             return {"ok": True, "items": []}
+        backend = getattr(runtime.memory, "backend", "jsonl")
         if facts:
-            return {"ok": True, "items": runtime.memory.list_facts(k=max(k, 12))}
-        return {"ok": True, "items": runtime.memory.search(q, k=k)}
+            return {"ok": True, "backend": backend, "items": runtime.memory.list_facts(k=max(k, 12))}
+        return {"ok": True, "backend": backend, "items": runtime.memory.search(q, k=k) if q else []}
 
     @app.post("/api/memory/forget")
     async def memory_forget(body: dict) -> dict:

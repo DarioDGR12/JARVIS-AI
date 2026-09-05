@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 from jarvis_brain.bus.envelope import Event
+from jarvis_brain.surveillance.child import DetectorChild, detector_path
 
 
 PROTOCOL_FIELDS = ("kind", "camera", "score", "text", "timestamp")
@@ -12,25 +13,33 @@ PROTOCOL_FIELDS = ("kind", "camera", "score", "text", "timestamp")
 class SurveillanceService:
     """Door agent. YOLO stays out of tree (AGPL). We only ingest alerts."""
 
-    def __init__(self) -> None:
+    def __init__(self, child: DetectorChild | None = None) -> None:
         self.armed: bool = False
         self.last_alert: dict[str, Any] | None = None
         self.last_error: str | None = None
+        self.child = child or DetectorChild()
 
     def snapshot(self) -> dict[str, Any]:
+        child = self.child.snapshot()
         return {
             "armed": self.armed,
             "detector": "external",
             "policy": "yolo-out-of-tree",
             "ingest": "POST /api/surveillance/alert",
             "fields": list(PROTOCOL_FIELDS),
+            "child": child,
+            "installed": bool(child.get("path") or detector_path()),
             "last": self.last_alert,
-            "error": self.last_error,
+            "error": self.last_error or child.get("error"),
         }
 
     def set_armed(self, armed: bool) -> None:
         self.armed = bool(armed)
         self.last_error = None
+        if self.armed:
+            self.child.start()
+        else:
+            self.child.stop()
 
     def ingest(self, payload: dict[str, Any]) -> dict[str, Any]:
         alert = {

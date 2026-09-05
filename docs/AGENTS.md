@@ -3,17 +3,17 @@
 Nueve agentes. Cada ronda investiga, corta un slice usable y pasa QA.  
 **No** YOLO en el árbol (AGPL). **No** `Memory()` default (OpenAI + PostHog).
 
-| ID | Frente | Ronda 1 | Ronda 2 |
-|---|---|---|---|
-| A-VOICE | Wake + STT + barge-in | Contrato + API. Sin modelos. | Mic HUD + Web Speech + barge-in |
-| A-VISOR | Overlay always-on-top | Visor compacto + Tauri `set_always_on_top` | Click-through (`set_ignore_cursor_events`) |
-| A-SIGHT | Pantalla → Hermes | `explica la pantalla` hace handoff con OCR | Abrir URLs del OCR (Howdy) |
-| A-OFFICER | Watchdog proactivo | Load/RAM/temp + cooldown + toasts | Hermes caído + hablar alertas |
-| A-PRESENCE | Presencia webcam | Luma del frame → `hud.presence` | Standby al irte (sin apagar cam) |
-| A-TOWER | Torre HA | «cómo está la casa» + entidades por dominio | «escena noche» + Howdy |
-| A-MEM | Memoria | `recuerda que` / `olvida` sobre JSONL | «qué recuerdas» lista hechos |
-| A-BRIEF | Briefing globo | Extracto SENTINEL + Tierra NASA | Clima Open-Meteo (offline = skip) |
-| A-DOOR | Puerta | Ingest de alerta. Armar pide Howdy. | Protocolo detector + script + HUD |
+| ID | Frente | Ronda 1 | Ronda 2 | Ronda 3 |
+|---|---|---|---|---|
+| A-VOICE | Wake + STT + barge-in | Contrato + API. Sin modelos. | Mic HUD + Web Speech + barge-in | openWakeWord + faster-whisper (extras) + PCM |
+| A-VISOR | Overlay always-on-top | Visor compacto + Tauri `set_always_on_top` | Click-through (`set_ignore_cursor_events`) | Transparente + hit-test por región |
+| A-SIGHT | Pantalla → Hermes | `explica la pantalla` hace handoff con OCR | Abrir URLs del OCR (Howdy) | — |
+| A-OFFICER | Watchdog proactivo | Load/RAM/temp + cooldown + toasts | Hermes caído + hablar alertas | — |
+| A-PRESENCE | Presencia webcam | Luma del frame → `hud.presence` | Standby al irte (sin apagar cam) | — |
+| A-TOWER | Torre HA | «cómo está la casa» + entidades por dominio | «escena noche» + Howdy | — |
+| A-MEM | Memoria | `recuerda que` / `olvida` sobre JSONL | «qué recuerdas» lista hechos | mem0 OSS (Qdrant + Ollama, telemetría off) |
+| A-BRIEF | Briefing globo | Extracto SENTINEL + Tierra NASA | Clima Open-Meteo (offline = skip) | Un HLS vivo (NASA TV / ISS) |
+| A-DOOR | Puerta | Ingest de alerta. Armar pide Howdy. | Protocolo detector + script + HUD | Hijo JSONL fuera del repo |
 
 ---
 
@@ -114,3 +114,32 @@ Nueve agentes. Cada ronda investiga, corta un slice usable y pasa QA.
 **Investiga:** Los detectores externos no tenían contrato.  
 **Slice:** snapshot `ingest` + `fields`. `brain/scripts/surv_ingest.py`. Botón armar (Howdy).  
 **Siguiente:** proceso hijo YOLO fuera del repo.
+
+---
+
+## Ronda 3 — resultados
+
+### A-VOICE
+**Investiga:** openWakeWord + faster-whisper pesan. Esta VM no tiene mic. El HUD ya oye con Web Speech.  
+**Slice:** `LocalVoiceEngine` carga OWW/`hey_jarvis` + whisper `tiny` si el extra `[stt]` está. PCM por `/ws/voice` y `POST /api/voice/pcm`. Sin paquetes, el HUD sigue.  
+**Siguiente:** bajar los modelos en Pop!_OS (`pip install '.[stt]'`).
+
+### A-VISOR
+**Investiga:** ignore de ventana entera no permite chrome. Hay que leer el cursor en nativo.  
+**Slice:** visor transparente (`set_background_color` + CSS). Hilo Rust: titlebar/lado = clics; anillo = atraviesa.  
+**Siguiente:** segunda ventana solo overlay.
+
+### A-MEM
+**Investiga:** `Memory()` default = OpenAI + PostHog.  
+**Slice:** `Memory.from_config` con Qdrant on-disk + Ollama `nomic-embed-text` / `llama3.1:8b`. `MEM0_TELEMETRY=false`. `LayeredMemory` = JSONL + mem0. Sin Ollama, solo JSONL.  
+**Siguiente:** embeddings locales si no hay Ollama.
+
+### A-BRIEF
+**Investiga:** Un HLS, no 10k cams. NASA TV Akamai responde 200.  
+**Slice:** pin `iss` + `hls.js` 1.5.20. «pon el feed vivo» / clic en el pin. Fail soft si el directo cae.  
+**Siguiente:** más de un directo (sigue capado).
+
+### A-DOOR
+**Investiga:** ultralytics es AGPL.  
+**Slice:** `DetectorChild` habla JSONL con `$JARVIS_YOLO_DETECT`. Stub de protocolo en `brain/scripts/detect_stub.py` (sin YOLO). Al armar, loop + debounce.  
+**Siguiente:** tu `detect.py` con YOLO26n fuera del repo.

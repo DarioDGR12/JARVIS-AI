@@ -29,8 +29,12 @@ def test_repo_contains_tauri_app() -> None:
     assert "set_visor" in rust
     assert "set_click_through" in rust
     assert "set_ignore_cursor_events" in rust
+    assert "set_background_color" in rust
+    assert "spawn_hit_loop" in rust
     caps = (root / "desktop" / "src-tauri" / "capabilities" / "default.json").read_text()
     assert "allow-set-ignore-cursor-events" in caps
+    assert "allow-set-background-color" in caps
+    assert "allow-cursor-position" in caps
     assert "cam-hold-banner" in html
     js = (root / "desktop" / "ui" / "app.js").read_text()
     assert "getUserMedia" in js
@@ -40,7 +44,17 @@ def test_repo_contains_tauri_app() -> None:
     assert "bargeIn" in js
     assert "SpeechRecognition" in js
     assert "/api/voice/transcript" in js
+    assert "playLive" in js
+    assert "hls.min.js" in js
+    assert 'id="live-video"' in html
     globe = root / "desktop" / "ui" / "globe"
+    assert (globe / "vendor" / "hls.min.js").is_file()
+    assert '"hls"' in (globe / "feeds.json").read_text()
+    assert "ntv1.akamaized.net" in (globe / "feeds.json").read_text()
+    csp = (root / "desktop" / "src-tauri" / "tauri.conf.json").read_text()
+    assert "transparent" in csp
+    assert "media-src" in csp and "https:" in csp
+    assert (root / "brain" / "scripts" / "detect_stub.py").is_file()
     assert (globe / "index.html").is_file()
     assert (globe / "globe.js").is_file()
     assert (globe / "vendor" / "three.min.js").is_file()

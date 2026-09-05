@@ -152,9 +152,10 @@
     if (ev.type === "hud.show_view" && ev.payload && ev.payload.view) {
       paintView(ev.payload.view);
     }
-    if (ev.type === "map.focus" || ev.type === "map.query" || ev.type === "map.show_feeds") {
+    if (ev.type === "map.focus" || ev.type === "map.query" || ev.type === "map.show_feeds" || ev.type === "map.live") {
       sendToGlobe(ev);
     }
+    if (ev.type === "map.live") playLiveFromId((ev.payload && ev.payload.id) || "iss");
     if (ev.type === "hud.set_mode" || ev.type === "hud.display" || ev.type === "hud.speak"
       || ev.type === "hud.highlight" || ev.type === "brain.status" || ev.type === "persona.changed"
       || ev.type === "auth.challenge" || ev.type === "auth.result" || ev.type === "hud.ready"
@@ -189,6 +190,74 @@
     if (el) el.textContent = text;
   }
 
+  let hlsHandle = null;
+
+  function stopLive() {
+    const video = document.getElementById("live-video");
+    const empty = document.getElementById("live-empty");
+    if (hlsHandle) {
+      try { hlsHandle.destroy(); } catch { /* ignore */ }
+      hlsHandle = null;
+    }
+    if (video) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      video.hidden = true;
+    }
+    if (empty) empty.textContent = "sin directo · un feed (NASA TV)";
+  }
+
+  function loadHlsLib() {
+    if (window.Hls) return Promise.resolve(window.Hls);
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "globe/vendor/hls.min.js";
+      s.onload = () => resolve(window.Hls);
+      s.onerror = () => reject(new Error("hls.js"));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function playLive(url, label) {
+    const video = document.getElementById("live-video");
+    const empty = document.getElementById("live-empty");
+    if (!video || !url) return;
+    stopLive();
+    if (empty) empty.textContent = "conectando " + (label || "live") + "…";
+    try {
+      if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = url;
+      } else {
+        const Hls = await loadHlsLib();
+        if (Hls && Hls.isSupported()) {
+          hlsHandle = new Hls({ enableWorker: true, lowLatencyMode: true });
+          hlsHandle.loadSource(url);
+          hlsHandle.attachMedia(video);
+        } else {
+          throw new Error("HLS no soportado");
+        }
+      }
+      video.hidden = false;
+      await video.play().catch(() => {});
+      if (empty) empty.textContent = "LIVE · " + (label || "NASA TV");
+    } catch (err) {
+      if (empty) empty.textContent = "feed caído · " + (err.message || err);
+    }
+  }
+
+  async function playLiveFromId(id) {
+    try {
+      const base = await brainUrl();
+      const data = await fetch(base + "/api/map").then((r) => r.json());
+      const feeds = (data.live || data.feeds || []);
+      const hit = feeds.find((f) => f.id === id && f.hls) || feeds.find((f) => f.hls);
+      if (hit && hit.hls) playLive(hit.hls, hit.loc || hit.id);
+    } catch {
+      /* ignore */
+    }
+  }
+
   function sendToGlobe(ev) {
     if (!mapFrame || !mapFrame.contentWindow) {
       pendingMap.push(ev);
@@ -207,7 +276,9 @@
     if (data.type === "map.selection") {
       const p = data.payload || {};
       const sel = document.getElementById("map-sel");
-      if (sel) sel.textContent = (p.feed_id || "") + " · " + (p.lat || "") + ", " + (p.lon || "");
+      if (sel) sel.textContent = (p.feed_id || "") + " · " + (p.lat || "") + ", " + (p.lon || "")
+        + (p.live ? " · LIVE" : "");
+      if (p.hls) playLive(p.hls, p.feed_id);
     }
     if (data.type === "map.feed_ready") {
       mapStatus((data.payload && data.payload.count) + " pines");
@@ -247,6 +318,7 @@
     mapFrame.remove();
     mapFrame = null;
     pendingMap = [];
+    stopLive();
     mapStatus("sin montar");
     const sel = document.getElementById("map-sel");
     if (sel) sel.textContent = "";

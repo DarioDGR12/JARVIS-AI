@@ -9,7 +9,7 @@ from jarvis_brain.config import BrainConfig
 from jarvis_brain.ha.client import HomeAssistant
 from jarvis_brain.hermes.client import HermesClient, HermesError
 from jarvis_brain.map.weather import attach_weather
-from jarvis_brain.memory.store import LocalMemory
+from jarvis_brain.memory.store import LocalMemory  # LayeredMemory duck-types this
 from jarvis_brain.persona.overlay import choose_persona, persona_overlay
 from jarvis_brain.tools.phrase_map import match_phrase
 from jarvis_brain.vision.service import VisionService
@@ -206,7 +206,7 @@ async def run_text_turn(
                     source="brain",
                 )
             )
-            if hit.action in {"map.show", "map.focus", "map.query", "map.brief"}:
+            if hit.action in {"map.show", "map.focus", "map.query", "map.brief", "map.live"}:
                 await bus.publish(
                     new_event("hud.show_view", {"view": "map", "visible": True}, source="brain")
                 )
@@ -214,6 +214,8 @@ async def run_text_turn(
                 await bus.publish(new_event("map.focus", hit.payload, source="brain"))
             elif hit.action == "map.query":
                 await bus.publish(new_event("map.query", hit.payload, source="brain"))
+            elif hit.action == "map.live":
+                await bus.publish(new_event("map.live", hit.payload, source="brain"))
             elif hit.action == "vision.capture":
                 await bus.publish(
                     new_event("hud.show_view", {"view": "vision", "visible": True}, source="brain")
