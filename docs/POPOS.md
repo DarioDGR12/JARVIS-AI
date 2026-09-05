@@ -4,11 +4,22 @@ Versión de prueba (ronda 5). Cerebro en `127.0.0.1`. Sin YOLO en el repo. Sin E
 
 ## Instalar
 
+`main` aún no tiene el instalador. Clona la rama del PR:
+
 ```bash
-git clone https://github.com/DarioDGR12/JARVIS-AI.git
+git clone -b cursor/integration-plan-5cec https://github.com/DarioDGR12/JARVIS-AI.git
 cd JARVIS-AI
 bash scripts/popos-trial.sh --apt --hermes
 # o, si ya tienes deps: bash scripts/install.sh
+```
+
+Si ya clonaste `main`:
+
+```bash
+cd ~/JARVIS-AI
+git fetch origin
+git checkout cursor/integration-plan-5cec
+bash scripts/popos-trial.sh --apt --hermes
 ```
 
 `--apt` instala Chromium, Tesseract, ffmpeg, xdotool, webkit (sudo).  

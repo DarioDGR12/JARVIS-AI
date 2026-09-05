@@ -5,6 +5,8 @@ App de escritorio (Tauri). Tú pones la key del modelo (**BYOK**). La voz es loc
 **Probar en Pop!_OS:** [docs/POPOS.md](docs/POPOS.md)
 
 ```bash
+git clone -b cursor/integration-plan-5cec https://github.com/DarioDGR12/JARVIS-AI.git
+cd JARVIS-AI
 bash scripts/popos-trial.sh --apt --hermes
 export PATH="$HOME/.local/bin:$PATH"
 jarvis doctor
