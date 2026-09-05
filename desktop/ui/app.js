@@ -266,8 +266,12 @@
     try {
       const base = await brainUrl();
       const data = await fetch(base + "/api/map").then((r) => r.json());
-      const feeds = (data.live || data.feeds || []);
-      const hit = feeds.find((f) => f.id === id && f.hls) || feeds.find((f) => f.hls);
+      const feeds = (data.live || data.feeds || []).filter((f) => f.hls);
+      let want = id;
+      if (!want || want === "next") {
+        want = (data.last_selection && data.last_selection.feed_id) || "iss";
+      }
+      const hit = feeds.find((f) => f.id === want) || feeds[0];
       if (hit && hit.hls) playLive(hit.hls, hit.loc || hit.id);
     } catch {
       /* ignore */

@@ -50,6 +50,7 @@ def test_repo_contains_tauri_app() -> None:
     assert "/api/voice/transcript" in js
     assert "playLive" in js
     assert "startPcm" in js
+    assert "last_selection" in js
     assert "paintSchematic" in js
     assert "paintRegions" in js
     assert "hls.min.js" in js
