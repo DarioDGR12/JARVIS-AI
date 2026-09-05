@@ -152,7 +152,8 @@
     if (ev.type === "hud.show_view" && ev.payload && ev.payload.view) {
       paintView(ev.payload.view);
     }
-    if (ev.type === "map.focus" || ev.type === "map.query" || ev.type === "map.show_feeds" || ev.type === "map.live") {
+    if (ev.type === "map.focus" || ev.type === "map.query" || ev.type === "map.show_feeds" || ev.type === "map.live"
+      || ev.type === "map.zoom" || ev.type === "hud.gesture") {
       sendToGlobe(ev);
     }
     if (ev.type === "map.live") playLiveFromId((ev.payload && ev.payload.id) || "iss");
@@ -161,7 +162,7 @@
       || ev.type === "auth.challenge" || ev.type === "auth.result" || ev.type === "hud.ready"
       || ev.type === "hud.camera" || ev.type === "vision.screen_context" || ev.type === "vision.error"
       || ev.type === "vision.watch" || ev.type === "hud.visor" || ev.type === "hud.overlay"
-      || ev.type === "hud.presence"
+      || ev.type === "hud.presence" || ev.type === "hud.gesture"
       || ev.type === "hud.click_through" || ev.type === "voice.wake" || ev.type === "system.alert"
       || ev.type === "surveillance.alert") {
       refreshHud();
@@ -277,6 +278,25 @@
       /* ignore */
     }
   }
+
+  window.jarvisHud = {
+    gesture(kind, extra) {
+      const name = kind === "spread" ? "spread" : "pinch";
+      const payload = {
+        name,
+        hand: (extra && extra.hand) || "both",
+        confidence: (extra && extra.confidence) || 0.8,
+        timestamp: Date.now(),
+        scale: extra && extra.dist,
+      };
+      brainUrl().then((base) => fetch(base + "/api/hud/gesture", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })).catch(() => {});
+      sendToGlobe({ type: "hud.gesture", payload });
+    },
+  };
 
   function sendToGlobe(ev) {
     if (!mapFrame || !mapFrame.contentWindow) {
@@ -1142,22 +1162,28 @@
     }
   }
 
-  function paintSchematic(data, states) {
-    const box = document.getElementById("ha-schematic");
+  function paintZoneGrid(box, items, extraClass) {
     if (!box) return;
     box.innerHTML = "";
+    (items || []).forEach((z) => {
+      const el = document.createElement("div");
+      el.className = "zone" + (extraClass ? " " + extraClass : "") + (z.on ? " on" : "");
+      el.innerHTML = "<h4>" + z.label + "</h4><p>" + (z.on || 0) + "/" + (z.count || 0) + " on</p>";
+      box.appendChild(el);
+    });
+  }
+
+  function paintSchematic(data, states) {
+    const box = document.getElementById("ha-schematic");
+    const rooms = document.getElementById("ha-rooms");
     const zones = (data && data.zones) || [
       { id: "luces", label: "Luces", on: 0, count: 0 },
       { id: "clima", label: "Clima", on: 0, count: 0 },
       { id: "puertas", label: "Puertas", on: 0, count: 0 },
       { id: "media", label: "Media", on: 0, count: 0 },
     ];
-    zones.forEach((z) => {
-      const el = document.createElement("div");
-      el.className = "zone" + (z.on ? " on" : "");
-      el.innerHTML = "<h4>" + z.label + "</h4><p>" + (z.on || 0) + "/" + (z.count || 0) + " on</p>";
-      box.appendChild(el);
-    });
+    paintZoneGrid(box, zones, "");
+    paintZoneGrid(rooms, (data && data.rooms) || [], "room");
   }
 
   async function loadHa() {

@@ -1,13 +1,17 @@
 [Unit]
-Description=JARVIS brain API (alias of jarvis-brain.service)
+Description=JARVIS brain API (127.0.0.1 only)
 After=network.target
+Documentation=file:///opt/jarvis/docs/INTEGRATION_PLAN.md
 
 [Service]
 Type=simple
+WorkingDirectory=%h/.local/share/jarvis/src/brain
 ExecStart=/usr/bin/python3 -m jarvis_brain serve
 Restart=on-failure
+RestartSec=3
 Environment=JARVIS_BUS_HOST=127.0.0.1
 Environment=JARVIS_TTS_PROVIDER=piper
+Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-%h/.config/jarvis/brain.env
 
 [Install]

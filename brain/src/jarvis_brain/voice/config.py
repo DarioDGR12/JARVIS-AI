@@ -76,8 +76,10 @@ class VoiceConfig:
             model=os.environ.get("JARVIS_CHATTERBOX_MODEL", "turbo"),
             device=_default_device(),
             model_path=model_path,
-            jarvis_wav=os.environ.get("JARVIS_VOICE_JARVIS") or None,
-            companion_wav=os.environ.get("JARVIS_VOICE_COMPANION") or None,
+            jarvis_wav=_resolve_voice_wav("jarvis", os.environ.get("JARVIS_VOICE_JARVIS")),
+            companion_wav=_resolve_voice_wav(
+                "companion", os.environ.get("JARVIS_VOICE_COMPANION")
+            ),
             piper_bin=os.environ.get("JARVIS_PIPER_BIN")
             or (str(default_bin) if default_bin.is_file() else "piper"),
             piper_model=os.environ.get("JARVIS_PIPER_MODEL")
@@ -86,6 +88,27 @@ class VoiceConfig:
             or (str(default_espeak) if default_espeak.is_dir() else None),
             offline=os.environ.get("HF_HUB_OFFLINE", "1") != "0",
         )
+
+
+def _repo_voices() -> Path:
+    return Path(__file__).resolve().parents[4] / "voices"
+
+
+def resolve_voice_wav(name: str, explicit: str | None = None) -> str | None:
+    if explicit:
+        return explicit
+    candidates = (
+        Path.home() / ".local/share/jarvis/voices" / f"{name}.wav",
+        _repo_voices() / f"{name}.wav",
+    )
+    for path in candidates:
+        if path.is_file():
+            return str(path)
+    return None
+
+
+def _resolve_voice_wav(name: str, explicit: str | None) -> str | None:
+    return resolve_voice_wav(name, explicit)
 
 
 def _default_device() -> str:

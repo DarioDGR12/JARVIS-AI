@@ -10,6 +10,7 @@ use tauri::{Manager, State};
 /// 0 = off, 1 = region hit-test, 2 = force click-through.
 struct HitMode(Arc<AtomicU8>);
 struct VisorOn(Arc<AtomicBool>);
+struct OverlayOn(Arc<AtomicBool>);
 
 #[tauri::command]
 fn brain_url() -> String {
@@ -78,15 +79,20 @@ fn set_click_through(
 }
 
 #[tauri::command]
-fn set_overlay(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+fn set_overlay(
+    app: tauri::AppHandle,
+    overlay: State<OverlayOn>,
+    enabled: bool,
+) -> Result<(), String> {
     let Some(win) = app.get_webview_window("overlay") else {
         return Ok(());
     };
     apply_background(&win, true);
+    overlay.0.store(enabled, Ordering::Relaxed);
     if enabled {
         win.set_always_on_top(true)
             .map_err(|err| err.to_string())?;
-        let _ = win.set_ignore_cursor_events(true);
+        let _ = win.set_ignore_cursor_events(false);
         win.show().map_err(|err| err.to_string())?;
     } else {
         let _ = win.set_ignore_cursor_events(false);
@@ -124,6 +130,30 @@ fn spawn_hit_loop(app: tauri::AppHandle, flag: Arc<AtomicU8>) {
     });
 }
 
+fn spawn_overlay_hit_loop(app: tauri::AppHandle, flag: Arc<AtomicBool>) {
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_millis(40));
+        if !flag.load(Ordering::Relaxed) {
+            continue;
+        }
+        let Some(win) = app.get_webview_window("overlay") else {
+            continue;
+        };
+        let (Ok(cursor), Ok(origin), Ok(size)) =
+            (win.cursor_position(), win.outer_position(), win.inner_size())
+        else {
+            continue;
+        };
+        let x = cursor.x - f64::from(origin.x);
+        let y = cursor.y - f64::from(origin.y);
+        let w = f64::from(size.width);
+        let h = f64::from(size.height);
+        let inside = x >= 0.0 && y >= 0.0 && x <= w && y <= h;
+        let chrome = inside && y < 36.0;
+        let _ = win.set_ignore_cursor_events(!chrome);
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -138,7 +168,10 @@ pub fn run() {
             let flag = Arc::new(AtomicU8::new(0));
             app.manage(HitMode(flag.clone()));
             app.manage(VisorOn(Arc::new(AtomicBool::new(false))));
+            let overlay_flag = Arc::new(AtomicBool::new(false));
+            app.manage(OverlayOn(overlay_flag.clone()));
             spawn_hit_loop(app.handle().clone(), flag);
+            spawn_overlay_hit_loop(app.handle().clone(), overlay_flag);
             let show = MenuItem::with_id(app, "show", "Mostrar", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;

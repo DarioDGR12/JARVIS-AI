@@ -59,6 +59,7 @@ class VisionService:
         self.interval_ms: int = 15000
         self.last_error: str | None = None
         self.last_click: dict | None = None
+        self.last_type: dict | None = None
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -68,6 +69,7 @@ class VisionService:
             "interval_ms": self.interval_ms,
             "last": None if self.last_shot is None else self.last_shot.to_payload(),
             "last_click": self.last_click,
+            "last_type": self.last_type,
             "error": self.last_error,
         }
 

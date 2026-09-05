@@ -10,16 +10,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from jarvis_brain.auth.howdy import AuthGate
+from jarvis_brain.auth.howdy import AuthGate, warm_howdy
 from jarvis_brain.bus.envelope import new_event
 from jarvis_brain.bus.server import EventBus
 from jarvis_brain.config import BrainConfig
 from jarvis_brain.ha.client import HomeAssistant, load_ha_config, write_ha_config
+from jarvis_brain.ha.ws import HAWebsocket
 from jarvis_brain.hermes.client import HermesClient, HermesError
 from jarvis_brain.hud.state import HUD_VIEWS, HudState
 from jarvis_brain.map.feeds import filter_feeds, query_feeds
 from jarvis_brain.map.hls_proxy import fetch_hls
 from jarvis_brain.map.state import MapState
+from jarvis_brain.memory.onnx import onnx_status
 from jarvis_brain.memory.store import LocalMemory
 from jarvis_brain.product.providers import PROVIDERS
 from jarvis_brain.product.setup import apply_setup, load_product, public_status
@@ -27,9 +29,10 @@ from jarvis_brain.product.start import ensure_stack
 from jarvis_brain.surveillance.service import SurveillanceService
 from jarvis_brain.tools.stats import system_stats
 from jarvis_brain.ha.schematic import build_schematic
-from jarvis_brain.tools.watchdog import Watchdog, in_quiet_hours
+from jarvis_brain.tools.watchdog import Watchdog, officer_may_speak
 from jarvis_brain.vision.click import click_region
 from jarvis_brain.vision.regions import match_region
+from jarvis_brain.vision.typewrite import type_text
 from jarvis_brain.turn import run_text_turn, speak_reply
 from jarvis_brain.vision.service import VisionService
 from jarvis_brain.vision.urls import extract_urls, open_urls
@@ -77,10 +80,12 @@ class ProductRuntime:
         self.surv = surv or SurveillanceService()
         self.watchdog = watchdog or Watchdog()
         self.voice_engine = voice_engine or LocalVoiceEngine()
+        self.ha_ws = HAWebsocket(self.ha.cfg)
         self.lock = asyncio.Lock()
         self._watch_task: asyncio.Task[None] | None = None
         self._officer_task: asyncio.Task[None] | None = None
         self._door_task: asyncio.Task[None] | None = None
+        self._ha_ws_task: asyncio.Task[None] | None = None
         self.bus.on_voice_pcm = self._on_voice_pcm
         self.bus.subscribe(self.hud.apply)
         self.bus.subscribe(self.world.apply)
@@ -98,6 +103,17 @@ class ProductRuntime:
     def ensure_door_task(self) -> None:
         if self._door_task is None or self._door_task.done():
             self._door_task = asyncio.create_task(self._door_loop())
+
+    def ensure_ha_ws(self) -> None:
+        self.ha_ws.bind(self.ha.cfg)
+        if self._ha_ws_task is None or self._ha_ws_task.done():
+            self._ha_ws_task = asyncio.create_task(self._ha_ws_loop())
+
+    async def _ha_ws_loop(self) -> None:
+        async def _forward(payload: dict) -> None:
+            await self.bus.publish(new_event("ha.state_changed", payload, source="ha"))
+
+        await self.ha_ws.run(_forward)
 
     async def _on_voice_pcm(self, pcm: bytes) -> None:
         hit = self.voice_engine.ingest_pcm(pcm, self.bus.voice_sample_rate)
@@ -173,7 +189,7 @@ class ProductRuntime:
                     source="officer",
                 )
             )
-            if self.tts and not self.lock.locked() and not in_quiet_hours():
+            if self.tts and not self.lock.locked() and officer_may_speak(self.hud):
                 try:
                     async with self.lock:
                         await speak_reply(
@@ -242,6 +258,7 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
     @app.get("/api/status")
     async def status() -> dict:
         runtime.ensure_officer_task()
+        runtime.ensure_ha_ws()
         product = load_product()
         hermes_ok = False
         try:
@@ -262,7 +279,11 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             "vision": runtime.vision.snapshot(),
             "voice": voice_engine_status(runtime.voice_engine),
             "surv": runtime.surv.snapshot(),
-            "ha": {"configured": runtime.ha.cfg.configured, "up": False},
+            "ha": {
+                "configured": runtime.ha.cfg.configured,
+                "up": runtime.ha_ws.connected,
+                "ws": runtime.ha_ws.snapshot(),
+            },
             "bus": {
                 "clients": len(runtime.bus._clients),
                 "voice_clients": len(runtime.bus._voice_clients),
@@ -384,6 +405,21 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
         )
         return JSONResponse({"ok": True})
 
+    @app.post("/api/hud/gesture")
+    async def hud_gesture(body: dict | None = None) -> JSONResponse:
+        name = str((body or {}).get("name") or (body or {}).get("kind") or "")
+        if name not in {"pinch", "spread"}:
+            return JSONResponse({"ok": False, "error": "unknown gesture"}, status_code=400)
+        payload = {
+            "name": name,
+            "hand": (body or {}).get("hand") or "both",
+            "confidence": (body or {}).get("confidence"),
+            "timestamp": (body or {}).get("timestamp"),
+            "scale": (body or {}).get("scale"),
+        }
+        await runtime.bus.publish(new_event("hud.gesture", payload, source="hud"))
+        return JSONResponse({"ok": True, "gesture": runtime.hud.last_gesture})
+
     @app.post("/api/hud/ready")
     async def hud_ready(body: dict) -> dict:
         await runtime.bus.publish(
@@ -448,7 +484,12 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
                     source="brain",
                 )
             )
-            extra = " · Howdy en espera" if runtime.auth.status().enrolled else ""
+            warm = warm_howdy(runtime.auth)
+            extra = ""
+            if warm.get("warmed"):
+                extra = " · Howdy listo"
+            elif runtime.auth.status().enrolled:
+                extra = " · Howdy en espera"
             await runtime.bus.publish(
                 new_event(
                     "hud.display",
@@ -661,6 +702,31 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
         runtime.vision.last_click = result
         await runtime.bus.publish(
             new_event("hud.highlight", {"target": "screen", "reason": "click", "region": region}, source="brain")
+        )
+        return JSONResponse({"ok": True, **result})
+
+    @app.post("/api/vision/type")
+    async def vision_type(body: dict | None = None) -> JSONResponse:
+        gate = runtime.auth.require("vision.type", reason="vision.type")
+        if not gate.ok:
+            await runtime.bus.publish(
+                new_event("auth.challenge", {"reason": "vision.type", "tool": "vision.type"}, source="brain")
+            )
+            await runtime.bus.publish(new_event("auth.result", gate.to_payload(), source="auth"))
+            return JSONResponse(
+                {"ok": False, "error": "auth required", "auth": gate.to_payload()},
+                status_code=403,
+            )
+        regions = runtime.vision.last_shot.regions if runtime.vision.last_shot else []
+        query = str((body or {}).get("query") or "")
+        typed = str((body or {}).get("value") or (body or {}).get("text") or "")
+        region = match_region(regions, query or typed)
+        if not region:
+            return JSONResponse({"ok": False, "error": "no region"}, status_code=404)
+        result = type_text(typed, region)
+        runtime.vision.last_type = result
+        await runtime.bus.publish(
+            new_event("hud.highlight", {"target": "screen", "reason": "type", "region": region}, source="brain")
         )
         return JSONResponse({"ok": True, **result})
 
@@ -906,16 +972,31 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             return JSONResponse({"ok": False, "error": "url and token required"}, status_code=400)
         write_ha_config(url, token)
         runtime.ha = HomeAssistant(load_ha_config())
+        runtime.ha_ws.stop()
+        runtime.ha_ws.bind(runtime.ha.cfg)
+        runtime._ha_ws_task = None
+        runtime.ensure_ha_ws()
         return JSONResponse({"ok": True, "configured": runtime.ha.cfg.configured})
 
     @app.get("/api/memory")
     async def memory_search(q: str = "", k: int = 5, facts: bool = False) -> dict:
         if runtime.memory is None:
-            return {"ok": True, "items": []}
+            return {"ok": True, "items": [], "onnx": onnx_status()}
         backend = getattr(runtime.memory, "backend", "jsonl")
+        onnx = onnx_status()
         if facts:
-            return {"ok": True, "backend": backend, "items": runtime.memory.list_facts(k=max(k, 12))}
-        return {"ok": True, "backend": backend, "items": runtime.memory.search(q, k=k) if q else []}
+            return {
+                "ok": True,
+                "backend": backend,
+                "onnx": onnx,
+                "items": runtime.memory.list_facts(k=max(k, 12)),
+            }
+        return {
+            "ok": True,
+            "backend": backend,
+            "onnx": onnx,
+            "items": runtime.memory.search(q, k=k) if q else [],
+        }
 
     @app.post("/api/memory/forget")
     async def memory_forget(body: dict) -> dict:

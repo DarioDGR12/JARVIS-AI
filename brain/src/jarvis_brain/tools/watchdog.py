@@ -41,6 +41,19 @@ def parse_quiet_window(raw: str | None) -> tuple[dt_time, dt_time] | None:
     return start, end
 
 
+def officer_may_speak(hud: object | None = None, now: datetime | None = None) -> bool:
+    """TTS for officer alerts. Toasts still fire when this is false."""
+    if in_quiet_hours(now):
+        return False
+    if hud is None:
+        return True
+    if bool(getattr(hud, "standby_empty", False)):
+        return False
+    if getattr(hud, "presence", None) is False:
+        return False
+    return True
+
+
 def in_quiet_hours(now: datetime | None = None, window: str | None = None) -> bool:
     span = parse_quiet_window(window)
     if span is None:

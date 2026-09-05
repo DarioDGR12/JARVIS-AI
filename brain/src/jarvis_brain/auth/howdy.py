@@ -31,6 +31,7 @@ SENSITIVE = frozenset(
         "vision.watch",
         "vision.open",
         "vision.click",
+        "vision.type",
         "surveillance.arm",
     }
 )
@@ -184,3 +185,23 @@ class AuthGate:
                 ok=True, howdy_exit=0, error="none", user=self.user, ttl_s=0
             )
         return self.verify(reason=reason or tool, tool=tool)
+
+
+def warm_howdy(auth: AuthGate) -> dict:
+    """Stat compare.py if enrolled. Never calls verify() (12s camera block)."""
+    if os.environ.get("JARVIS_PRESENCE_HOWDY") not in {"1", "true", "yes"}:
+        return {"warmed": False, "reason": "flag-off"}
+    status = auth.status()
+    if not status.enrolled or not status.compare_path:
+        return {"warmed": False, "reason": "not-enrolled"}
+    if status.camera == "missing":
+        return {"warmed": False, "reason": "no-camera"}
+    path = Path(status.compare_path)
+    if not path.is_file():
+        return {"warmed": False, "reason": "missing-compare"}
+    return {
+        "warmed": True,
+        "reason": "ready",
+        "compare": status.compare_path,
+        "camera": status.camera,
+    }

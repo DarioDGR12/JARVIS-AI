@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from jarvis_brain.ha.rooms import group_rooms, load_room_map
+
 ZONES = (
     ("luces", ("light", "switch"), "Luces"),
     ("clima", ("climate", "fan"), "Clima"),
@@ -38,8 +40,11 @@ def build_schematic(states: list[dict[str, Any]] | None) -> dict[str, Any]:
                 "members": members[:12],
             }
         )
+    mapping = load_room_map()
+    rooms = group_rooms(rows, mapping)
     return {
         "configured": bool(rows),
         "zones": zones,
+        "rooms": rooms,
         "total": len(rows),
     }

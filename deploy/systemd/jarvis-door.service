@@ -1,0 +1,17 @@
+[Unit]
+Description=JARVIS door detector (out-of-tree child, no ultralytics in repo)
+Documentation=file://%h/.local/share/jarvis/src/docs/DETECT.md
+ConditionEnvironment=JARVIS_YOLO_DETECT
+After=jarvis-brain.service
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -lc 'exec "$JARVIS_YOLO_DETECT"'
+Restart=on-failure
+RestartSec=5
+EnvironmentFile=-%h/.config/jarvis/door.env
+# The brain also launches $JARVIS_YOLO_DETECT when the door is armed.
+# Use this unit only if you want the child always up, not vendored YOLO.
+
+[Install]
+WantedBy=default.target

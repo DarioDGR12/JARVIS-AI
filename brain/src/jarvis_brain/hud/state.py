@@ -46,6 +46,7 @@ class HudState:
     standby_empty: bool = False
     last_display: dict[str, Any] | None = None
     last_speak: dict[str, Any] | None = None
+    last_gesture: dict[str, Any] | None = None
     toasts: list[dict[str, Any]] = field(default_factory=list)
     ready: bool = False
 
@@ -66,6 +67,7 @@ class HudState:
             "standby_empty": self.standby_empty,
             "last_display": self.last_display,
             "last_speak": self.last_speak,
+            "last_gesture": self.last_gesture,
             "toasts": list(self.toasts[-8:]),
             "ready": self.ready,
             "views": list(HUD_VIEWS),
@@ -153,6 +155,18 @@ class HudState:
                 "tool",
             }:
                 self.operational = "standby"
+        elif event.type == "hud.gesture":
+            name = str(payload.get("name") or payload.get("kind") or "")
+            if name in {"pinch", "spread"}:
+                self.last_gesture = {
+                    "name": name,
+                    "hand": payload.get("hand") or "both",
+                    "confidence": payload.get("confidence"),
+                    "timestamp": payload.get("timestamp"),
+                }
+        elif event.type == "hud.click":
+            # Telemetry only. Nav clicks must not clobber last_display.
+            return
         elif event.type == "hud.ready":
             self.ready = True
         elif event.type == "brain.status":

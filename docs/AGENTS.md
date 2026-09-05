@@ -3,17 +3,17 @@
 Nueve agentes. Cada ronda investiga, corta un slice usable y pasa QA.  
 **No** YOLO en el árbol (AGPL). **No** `Memory()` default (OpenAI + PostHog).
 
-| ID | Frente | Ronda 1 | Ronda 2 | Ronda 3 | Ronda 4 |
-|---|---|---|---|---|---|
-| A-VOICE | Wake + STT + barge-in | Contrato + API. Sin modelos. | Mic HUD + Web Speech + barge-in | openWakeWord + faster-whisper (extras) + PCM | PCM HUD→`/ws/voice` si local + install script |
-| A-VISOR | Overlay always-on-top | Visor compacto + Tauri `set_always_on_top` | Click-through (`set_ignore_cursor_events`) | Transparente + hit-test por región | Segunda ventana overlay (anillo) |
-| A-SIGHT | Pantalla → Hermes | `explica la pantalla` hace handoff con OCR | Abrir URLs del OCR (Howdy) | — | Regiones OCR + «clica en …» (Howdy) |
-| A-OFFICER | Watchdog proactivo | Load/RAM/temp + cooldown + toasts | Hermes caído + hablar alertas | — | Horas quietas + perfil desk/server |
-| A-PRESENCE | Presencia webcam | Luma del frame → `hud.presence` | Standby al irte (sin apagar cam) | — | Welcome al volver |
-| A-TOWER | Torre HA | «cómo está la casa» + entidades por dominio | «escena noche» + Howdy | — | Esquema de zonas |
-| A-MEM | Memoria | `recuerda que` / `olvida` sobre JSONL | «qué recuerdas» lista hechos | mem0 OSS (Qdrant + Ollama, telemetría off) | Ranking léxico sin Ollama |
-| A-BRIEF | Briefing globo | Extracto SENTINEL + Tierra NASA | Clima Open-Meteo (offline = skip) | Un HLS vivo (NASA TV / ISS) | 2 feeds + «otro feed» |
-| A-DOOR | Puerta | Ingest de alerta. Armar pide Howdy. | Protocolo detector + script + HUD | Hijo JSONL fuera del repo | Plantilla + contrato `docs/DETECT.md` |
+| ID | Frente | Ronda 1 | Ronda 2 | Ronda 3 | Ronda 4 | Ronda 5 |
+|---|---|---|---|---|---|---|
+| A-VOICE | Wake + STT + barge-in | Contrato + API. Sin modelos. | Mic HUD + Web Speech + barge-in | openWakeWord + faster-whisper (extras) + PCM | PCM HUD→`/ws/voice` si local + install script | WAV default `voices/` + kiosk/systemd user |
+| A-VISOR | Overlay always-on-top | Visor compacto + Tauri `set_always_on_top` | Click-through (`set_ignore_cursor_events`) | Transparente + hit-test por región | Segunda ventana overlay (anillo) | Drag chrome + hit-test overlay |
+| A-SIGHT | Pantalla → Hermes | `explica la pantalla` hace handoff con OCR | Abrir URLs del OCR (Howdy) | — | Regiones OCR + «clica en …» (Howdy) | «escribe X en …» (Howdy, record-only) |
+| A-OFFICER | Watchdog proactivo | Load/RAM/temp + cooldown + toasts | Hermes caído + hablar alertas | — | Horas quietas + perfil desk/server | Mute TTS si el asiento está vacío |
+| A-PRESENCE | Presencia webcam | Luma del frame → `hud.presence` | Standby al irte (sin apagar cam) | — | Welcome al volver | Howdy warm (flag, sin `verify()`) |
+| A-TOWER | Torre HA | «cómo está la casa» + entidades por dominio | «escena noche» + Howdy | — | Esquema de zonas | Habitaciones + HA WebSocket |
+| A-MEM | Memoria | `recuerda que` / `olvida` sobre JSONL | «qué recuerdas» lista hechos | mem0 OSS (Qdrant + Ollama, telemetría off) | Ranking léxico sin Ollama | Probe ONNX (`JARVIS_MEM_ONNX`) |
+| A-BRIEF | Briefing globo | Extracto SENTINEL + Tierra NASA | Clima Open-Meteo (offline = skip) | Un HLS vivo (NASA TV / ISS) | 2 feeds + «otro feed» | Zoom globo por `hud.gesture` |
+| A-DOOR | Puerta | Ingest de alerta. Armar pide Howdy. | Protocolo detector + script + HUD | Hijo JSONL fuera del repo | Plantilla + contrato `docs/DETECT.md` | Unidad `jarvis-door.service` |
 
 ---
 
@@ -192,3 +192,54 @@ Nueve agentes. Cada ronda investiga, corta un slice usable y pasa QA.
 **Investiga:** El stub no documentaba el contrato.  
 **Slice:** `docs/DETECT.md` + `detect_template.py`. Snapshot `contract`. `POST /api/surveillance/tick`.  
 **Siguiente:** tu YOLO26n fuera del repo.
+
+---
+
+## Ronda 5 — resultados
+
+Huecos del plan original (gestos, HA WS, systemd/kiosk, WAV) + siguientes de ronda 4.
+
+### A-VOICE
+**Investiga:** Chatterbox ya lee `JARVIS_VOICE_*`; no había ficheros ni rutas por defecto.  
+**Slice:** resuelve `~/.local/share/jarvis/voices/{jarvis,companion}.wav` y `voices/` del repo. Placeholders de silencio + README (clone ≥5 s, no ElevenLabs). `scripts/install-user.sh` copia unidades y kiosk.  
+**Siguiente:** instala STT + WAVs reales en Pop!_OS.
+
+### A-VISOR
+**Investiga:** overlay ignore-cursor total no se puede arrastrar.  
+**Slice:** barra `data-tauri-drag-region`. Hit-test: chrome 36 px recibe clics; el anillo atraviesa.  
+**Siguiente:** QA nativo Tauri (Chrome no prueba ignore-cursor).
+
+### A-SIGHT
+**Investiga:** clic existía; teclado no.  
+**Slice:** «escribe hola en Docs» + `POST /api/vision/type` (Howdy `vision.type`). `wtype`/`xdotool`/`ydotool` solo si `JARVIS_VISION_TYPE=1` o `JARVIS_VISION_CLICK=1`.  
+**Siguiente:** foco real en la región antes de teclear.
+
+### A-OFFICER
+**Investiga:** callaba de noche; seguía hablando si el puesto estaba vacío.  
+**Slice:** `officer_may_speak` — no TTS si `standby_empty` o `presence is False`. Toasts siguen.  
+**Siguiente:** umbral por perfil en desk vs server (ya hay env).
+
+### A-PRESENCE
+**Investiga:** Howdy `verify()` son 12 s y esta VM no tiene cámara.  
+**Slice:** `warm_howdy` solo si `JARVIS_PRESENCE_HOWDY=1` + compare.py + V4L2. Nunca llama `verify()`. Welcome: «Howdy listo» / «en espera».  
+**Siguiente:** enrolar Howdy en el portátil.
+
+### A-TOWER
+**Investiga:** 4 cubos de dominio. Plan: WS + planos.  
+**Slice:** `HAWebsocket` (`/api/websocket`, auth + `subscribe_events` `state_changed`). Nunca `POST /api/states`. Habitaciones por token/`ha-rooms.json`. Vista Casa pinta `#ha-rooms`.  
+**Siguiente:** token HA real + áreas del registro.
+
+### A-MEM
+**Investiga:** fastembed/ONNX no está y no se descarga aquí.  
+**Slice:** `onnx_status()` + campo `onnx` en `GET /api/memory`. Flag `JARVIS_MEM_ONNX=1`. Sigue sin `Memory()`.  
+**Siguiente:** ONNX local en Pop si quieres vectores sin Ollama.
+
+### A-BRIEF
+**Investiga:** NASA TV live sigue muerto; los pines son VOD.  
+**Slice:** gestos pinch/spread → `hud.gesture` → `nudgeDist` en el globo (iframe, una webcam). Frases «pellizca» / «abre las manos».  
+**Siguiente:** 24/7 cuando NASA+ publique HLS vivo.
+
+### A-DOOR
+**Investiga:** el hijo vive en el cerebro al armar.  
+**Slice:** `deploy/systemd/jarvis-door.service` (`ConditionEnvironment=JARVIS_YOLO_DETECT`). Docs en `DETECT.md`.  
+**Siguiente:** tu `detect.py` + YOLO26n fuera del repo.

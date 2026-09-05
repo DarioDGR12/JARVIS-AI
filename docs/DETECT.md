@@ -29,3 +29,7 @@ export JARVIS_YOLO_DETECT=~/.local/share/jarvis/detect.py
 ```
 
 El stub `brain/scripts/detect_stub.py` solo prueba el protocolo. No es un detector.
+
+Unidad systemd de usuario (`deploy/systemd/jarvis-door.service`): solo si
+`JARVIS_YOLO_DETECT` apunta a **tu** script fuera del repo. El cerebro también
+lanza ese hijo al armar. ultralytics no se instala desde aquí.

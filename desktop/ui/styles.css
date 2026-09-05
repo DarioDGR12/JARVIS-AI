@@ -133,6 +133,8 @@ body.cam-hold video { opacity: 0.15; filter: grayscale(1); }
   text-transform: uppercase; color: var(--accent);
 }
 .schematic .zone p { margin: 0; font-size: 12px; color: var(--mute); }
+.schematic.rooms { margin-top: 0; }
+.schematic .zone.room h4 { color: var(--cyan); }
 body[data-visor="on"] #nav button:not(#btn-visor) { display: none; }
 body[data-visor="on"] #chat-view,
 body[data-visor="on"] #settings-view,

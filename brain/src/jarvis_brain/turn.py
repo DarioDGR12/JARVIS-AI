@@ -15,6 +15,7 @@ from jarvis_brain.tools.phrase_map import match_phrase
 from jarvis_brain.vision.service import VisionService
 from jarvis_brain.ha.schematic import build_schematic
 from jarvis_brain.vision.click import click_region
+from jarvis_brain.vision.typewrite import type_text
 from jarvis_brain.vision.regions import match_region
 from jarvis_brain.vision.urls import extract_urls, open_urls
 from jarvis_brain.voice.tts import LocalTTS, PcmChunk
@@ -223,6 +224,40 @@ async def run_text_turn(
                         source="brain",
                     )
                 )
+        elif hit.action == "vision.type" and vision is not None:
+            regions = (vision.last_shot.regions if vision.last_shot else []) or []
+            region = match_region(regions, str(hit.payload.get("query") or ""))
+            text = str(hit.payload.get("text") or "")
+            if not region:
+                reply = "No hay región que coincida. Captura la pantalla primero."
+            elif auth is not None:
+                gate = auth.require("vision.type", reason="vision.type")
+                if not gate.ok:
+                    reply = "Howdy: hace falta cara para escribir en pantalla."
+                    await bus.publish(
+                        new_event(
+                            "auth.challenge",
+                            {"reason": "vision.type", "tool": "vision.type"},
+                            source="brain",
+                        )
+                    )
+                    await bus.publish(new_event("auth.result", gate.to_payload(), source="auth"))
+                else:
+                    result = type_text(text, region)
+                    vision.last_type = result
+                    reply = f"Región {region['text']}: {result['reason']}."
+            else:
+                result = type_text(text, region)
+                vision.last_type = result
+                reply = f"Región {region['text']}: {result['reason']}."
+            if region:
+                await bus.publish(
+                    new_event(
+                        "hud.highlight",
+                        {"target": "screen", "reason": "type", "region": region},
+                        source="brain",
+                    )
+                )
         elif hit.action == "ha.schematic":
             states = []
             if ha is not None and ha.cfg.configured:
@@ -308,6 +343,22 @@ async def run_text_turn(
             elif hit.action == "vision.click":
                 await bus.publish(
                     new_event("hud.show_view", {"view": "vision", "visible": True}, source="brain")
+                )
+            elif hit.action == "vision.type":
+                await bus.publish(
+                    new_event("hud.show_view", {"view": "vision", "visible": True}, source="brain")
+                )
+            elif hit.action == "hud.gesture":
+                await bus.publish(
+                    new_event(
+                        "hud.gesture",
+                        {
+                            "name": hit.payload.get("name"),
+                            "hand": hit.payload.get("hand") or "both",
+                            "confidence": hit.payload.get("confidence") or 0.95,
+                        },
+                        source="brain",
+                    )
                 )
             elif hit.action == "hud.click_through":
                 await bus.publish(

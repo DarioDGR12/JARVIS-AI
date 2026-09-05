@@ -23,7 +23,9 @@ def test_repo_contains_tauri_app() -> None:
     assert 'id="btn-visor"' in html
     assert 'id="btn-overlay"' in html
     assert 'id="ha-schematic"' in html
+    assert 'id="ha-rooms"' in html
     assert 'id="screen-regions"' in html
+    assert "gestures.js" in html
     assert 'id="btn-mic"' in html
     assert 'id="btn-through"' in html
     assert 'id="btn-arm"' in html
@@ -31,6 +33,7 @@ def test_repo_contains_tauri_app() -> None:
     rust = (root / "desktop" / "src-tauri" / "src" / "lib.rs").read_text()
     assert "set_visor" in rust
     assert "set_overlay" in rust
+    assert "spawn_overlay_hit_loop" in rust
     assert "set_click_through" in rust
     assert "set_ignore_cursor_events" in rust
     assert "set_background_color" in rust
@@ -52,6 +55,7 @@ def test_repo_contains_tauri_app() -> None:
     assert "startPcm" in js
     assert "last_selection" in js
     assert "paintSchematic" in js
+    assert "jarvisHud" in js
     assert "paintRegions" in js
     assert "hls.min.js" in js
     assert 'id="live-video"' in html
@@ -61,6 +65,13 @@ def test_repo_contains_tauri_app() -> None:
     assert "nasaplus.akamaized.net" in (globe / "feeds.json").read_text()
     assert '"jwst"' in (globe / "feeds.json").read_text()
     assert (root / "desktop" / "ui" / "overlay.html").is_file()
+    overlay = (root / "desktop" / "ui" / "overlay.html").read_text()
+    assert "data-tauri-drag-region" in overlay
+    assert (root / "desktop" / "ui" / "gestures.js").is_file()
+    assert "nudgeDist" in (root / "desktop" / "ui" / "globe" / "globe.js").read_text()
+    assert (root / "deploy" / "systemd" / "jarvis-brain.service").is_file()
+    assert (root / "deploy" / "kiosk" / "jarvis-kiosk.sh").is_file()
+    assert (root / "voices" / "jarvis.wav").is_file()
     assert (root / "brain" / "scripts" / "detect_template.py").is_file()
     assert (root / "docs" / "DETECT.md").is_file()
     csp = (root / "desktop" / "src-tauri" / "tauri.conf.json").read_text()

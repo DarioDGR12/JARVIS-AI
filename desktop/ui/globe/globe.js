@@ -87,6 +87,12 @@
     return MAX_DIST - ((z - 1) * (MAX_DIST - MIN_DIST)) / 9;
   }
 
+  function nudgeDist(delta) {
+    const next = dist + Number(delta || 0);
+    dist = Math.min(MAX_DIST, Math.max(MIN_DIST, next));
+    if (backend && backend.draw) backend.draw();
+  }
+
   function focusLatLon(lat, lon, zoom) {
     const latN = Number(lat);
     const lonN = Number(lon);
@@ -534,6 +540,16 @@
         focusLatLon(hit.lat, hit.lon, 4);
         selectFeed(hit);
       }
+    } else if (data.type === "map.zoom") {
+      if (payload.delta != null) nudgeDist(payload.delta);
+      else if (payload.dist != null) {
+        dist = Math.min(MAX_DIST, Math.max(MIN_DIST, Number(payload.dist)));
+        if (backend && backend.draw) backend.draw();
+      }
+    } else if (data.type === "hud.gesture") {
+      const name = String(payload.name || "");
+      if (name === "pinch") nudgeDist(-0.55);
+      else if (name === "spread") nudgeDist(0.55);
     }
   }
 

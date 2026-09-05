@@ -84,6 +84,15 @@ _VISION_CLICK = re.compile(
     r"\b(clica|clic[aá]?|haz clic|click|pulsa)\b(?:\s+en)?\s+(.+)$",
     re.I,
 )
+_VISION_TYPE = re.compile(
+    r"\b(escribe|teclea|type)\b\s+(.+?)\s+\ben\s+(.+)$",
+    re.I,
+)
+_GESTURE_PINCH = re.compile(r"\b(pellizca|pellizco|pinch)\b", re.I)
+_GESTURE_SPREAD = re.compile(
+    r"\b(abre las manos|abre la mano|separa las manos|spread)\b",
+    re.I,
+)
 _HA_SCHEMATIC = re.compile(
     r"\b(mapa de (la )?casa|esquema( de (la )?casa)?|schematic)\b",
     re.I,
@@ -222,6 +231,30 @@ def match_phrase(text: str) -> PhraseHit | None:
             )
     if _VISION_OPEN.search(raw):
         return PhraseHit("vision.open", "Abriendo enlaces de la pantalla.", True)
+    typed = _VISION_TYPE.search(raw)
+    if typed:
+        text = typed.group(2).strip().strip("\"'")
+        target = typed.group(3).strip()
+        return PhraseHit(
+            "vision.type",
+            f"Escribiendo {text} en {target}.",
+            True,
+            {"text": text, "query": target},
+        )
+    if _GESTURE_PINCH.search(raw):
+        return PhraseHit(
+            "hud.gesture",
+            "Pellizco.",
+            True,
+            {"name": "pinch", "hand": "both", "confidence": 0.95},
+        )
+    if _GESTURE_SPREAD.search(raw):
+        return PhraseHit(
+            "hud.gesture",
+            "Manos abiertas.",
+            True,
+            {"name": "spread", "hand": "both", "confidence": 0.95},
+        )
     click = _VISION_CLICK.search(raw)
     if click:
         target = click.group(2).strip()
