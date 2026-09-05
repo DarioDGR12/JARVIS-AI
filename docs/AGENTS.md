@@ -55,9 +55,9 @@ Nueve agentes. Cada ronda investiga, corta un slice usable y pasa QA.
 **Siguiente:** mem0 OSS (Qdrant + Ollama, telemetría off).
 
 ### A-BRIEF
-**Investiga:** El globo enfoca pines. No habla. Feeds = extracto offline.  
-**Slice:** «briefing» / «qué pasa en Tokio» → texto del extracto + abre Mapa.  
-**Siguiente:** clima / un feed vivo.
+**Investiga:** El globo enfoca pines. No habla. Feeds = extracto offline. Los continentes eran óvalos.  
+**Slice:** «briefing» / «qué pasa en Tokio» → texto + mapa. Tierra NASA Blue Marble (3D y fallback 2D).  
+**Siguiente:** clima / un feed vivo. Los otros 8 agentes de ronda 1 siguen.
 
 ### A-DOOR
 **Investiga:** `surveillance.arm` ya era sensible. No había servicio. YOLO AGPL no se embebe.  

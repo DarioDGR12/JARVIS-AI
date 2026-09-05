@@ -18,3 +18,10 @@ JARVIS-AI is Apache-2.0. This file lists code and data bundled beside it.
 
 WebcamMap (~9 740 cams, ODbL) is **not** bundled. A later extract would need
 OSM attribution and share-alike on that dataset alone.
+
+## NASA Blue Marble
+
+- License: public domain (NASA / US Government)
+- Path: `desktop/ui/globe/textures/earth.jpg`
+- Downsampled 2048×1024 from Visible Earth Blue Marble 2002
+  (Reto Stöckli, Robert Simmon, NASA GSFC)

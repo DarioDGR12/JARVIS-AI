@@ -34,6 +34,9 @@ def test_repo_contains_tauri_app() -> None:
     assert (globe / "globe.js").is_file()
     assert (globe / "vendor" / "three.min.js").is_file()
     assert (globe / "feeds.json").is_file()
+    assert (globe / "textures" / "earth.jpg").is_file()
+    assert "textures/earth.jpg" in (globe / "globe.js").read_text()
+    assert "Blue Marble" in (globe / "NOTICE.md").read_text()
     notice = (globe / "NOTICE.md").read_text()
     assert "sentinel-feed-grid" in notice
     assert "do **not** vendor" in notice

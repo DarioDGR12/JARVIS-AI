@@ -2,6 +2,7 @@
   const FEED_CAP = 80;
   const MIN_DIST = 4.4;
   const MAX_DIST = 15;
+  const EARTH_URL = "textures/earth.jpg";
   const sceneEl = document.getElementById("scene");
   const focusEl = document.getElementById("focus");
   const countEl = document.getElementById("count");
@@ -11,9 +12,10 @@
   let selected = null;
   let alive = true;
   let rotY = 0.8;
-  let rotX = 0.15;
-  let dist = 8.5;
+  let rotX = 0.18;
+  let dist = 8.2;
   let backend = null;
+  let earthImage = null;
 
   function post(type, payload) {
     if (window.parent && window.parent !== window) {
@@ -98,6 +100,144 @@
     post("map.selection", { lat: feed.lat, lon: feed.lon, feed_id: feed.id });
   }
 
+  function worldFromLatLon(lat, lon) {
+    const phi = ((90 - lat) * Math.PI) / 180;
+    const theta = ((lon + 180) * Math.PI) / 180;
+    return {
+      x: -Math.sin(phi) * Math.cos(theta),
+      y: Math.cos(phi),
+      z: Math.sin(phi) * Math.sin(theta),
+    };
+  }
+
+  function cameraBasis() {
+    const camx = Math.sin(rotY) * Math.cos(rotX);
+    const camy = Math.sin(rotX);
+    const camz = Math.cos(rotY) * Math.cos(rotX);
+    const len = Math.hypot(camx, camy, camz) || 1;
+    const forwardX = -camx / len;
+    const forwardY = -camy / len;
+    const forwardZ = -camz / len;
+    let rx = forwardY * 0 - forwardZ * 1;
+    let ry = forwardZ * 0 - forwardX * 0;
+    let rz = forwardX * 1 - forwardY * 0;
+    const rlen = Math.hypot(rx, ry, rz) || 1;
+    rx /= rlen;
+    ry /= rlen;
+    rz /= rlen;
+    const ux = ry * forwardZ - rz * forwardY;
+    const uy = rz * forwardX - rx * forwardZ;
+    const uz = rx * forwardY - ry * forwardX;
+    return {
+      camx: camx / len,
+      camy: camy / len,
+      camz: camz / len,
+      rx, ry, rz,
+      ux, uy, uz,
+    };
+  }
+
+  function projectWorld(lat, lon, w, h) {
+    const R = Math.min(w, h) * 0.38;
+    const b = cameraBasis();
+    const p = worldFromLatLon(lat, lon);
+    const facing = p.x * b.camx + p.y * b.camy + p.z * b.camz;
+    if (facing <= 0.02) return null;
+    return {
+      x: w / 2 + (p.x * b.rx + p.y * b.ry + p.z * b.rz) * R,
+      y: h / 2 - (p.x * b.ux + p.y * b.uy + p.z * b.uz) * R,
+      R,
+    };
+  }
+
+  function cachePixels(img) {
+    const c = document.createElement("canvas");
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext("2d");
+    g.drawImage(img, 0, 0);
+    return { data: g.getImageData(0, 0, img.width, img.height).data, w: img.width, h: img.height };
+  }
+
+  function drawStars(ctx, w, h) {
+    ctx.fillStyle = "#03050a";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(232,238,246,0.55)";
+    let seed = 17;
+    for (let i = 0; i < 90; i += 1) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      const x = seed % w;
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      const y = seed % h;
+      ctx.fillRect(x, y, i % 9 === 0 ? 2 : 1, 1);
+    }
+  }
+
+  function paintTexturedSphere(ctx, pixels, w, h) {
+    const R = Math.min(w, h) * 0.38;
+    const cx = w / 2;
+    const cy = h / 2;
+    const halo = ctx.createRadialGradient(cx, cy, R * 0.86, cx, cy, R * 1.16);
+    halo.addColorStop(0, "rgba(90,170,230,0)");
+    halo.addColorStop(0.72, "rgba(80,160,220,0.18)");
+    halo.addColorStop(1, "rgba(3,5,10,0)");
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 1.16, 0, Math.PI * 2);
+    ctx.fill();
+
+    const size = Math.max(96, Math.min(400, Math.round(R * 2)));
+    const buf = paintTexturedSphere.buf || (paintTexturedSphere.buf = document.createElement("canvas"));
+    if (buf.width !== size) {
+      buf.width = size;
+      buf.height = size;
+    }
+    const bctx = buf.getContext("2d");
+    const image = bctx.createImageData(size, size);
+    const out = image.data;
+    const cr = (size - 1) / 2;
+    const b = cameraBasis();
+    const tw = pixels.w;
+    const th = pixels.h;
+    const src = pixels.data;
+    for (let y = 0; y < size; y += 1) {
+      const ny = (cr - y) / cr;
+      for (let x = 0; x < size; x += 1) {
+        const nx = (x - cr) / cr;
+        const rr = nx * nx + ny * ny;
+        const oi = (y * size + x) * 4;
+        if (rr > 1) {
+          out[oi + 3] = 0;
+          continue;
+        }
+        const nz = Math.sqrt(1 - rr);
+        const wx = nx * b.rx + ny * b.ux + nz * b.camx;
+        const wy = nx * b.ry + ny * b.uy + nz * b.camy;
+        const wz = nx * b.rz + ny * b.uz + nz * b.camz;
+        const lat = Math.asin(Math.max(-1, Math.min(1, wy)));
+        let lon = Math.atan2(wz, -wx) - Math.PI;
+        let u = lon / (2 * Math.PI) + 0.5;
+        u -= Math.floor(u);
+        const v = 0.5 - lat / Math.PI;
+        const tx = Math.min(tw - 1, Math.max(0, (u * tw) | 0));
+        const ty = Math.min(th - 1, Math.max(0, (v * th) | 0));
+        const ti = (ty * tw + tx) * 4;
+        const shade = 0.38 + 0.62 * nz;
+        out[oi] = src[ti] * shade;
+        out[oi + 1] = src[ti + 1] * shade;
+        out[oi + 2] = src[ti + 2] * shade;
+        out[oi + 3] = 255;
+      }
+    }
+    bctx.putImageData(image, 0, 0);
+    ctx.drawImage(buf, cx - R, cy - R, R * 2, R * 2);
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(160,210,255,0.28)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
   function canWebGL() {
     try {
       const c = document.createElement("canvas");
@@ -114,21 +254,7 @@
     let dragging = false;
     let lastX = 0;
     let lastY = 0;
-
-    function project(lat, lon) {
-      const w = canvas.width;
-      const h = canvas.height;
-      const R = Math.min(w, h) * 0.36;
-      const cx = w / 2;
-      const cy = h / 2;
-      const la = (lat * Math.PI) / 180;
-      const lo = (lon * Math.PI) / 180 - rotY;
-      const x = Math.cos(la) * Math.sin(lo);
-      const y = Math.sin(la);
-      const z = Math.cos(la) * Math.cos(lo);
-      if (z < 0) return null;
-      return { x: cx + x * R, y: cy - y * R, z, R, cx, cy };
-    }
+    let pixels = null;
 
     function draw() {
       const w = sceneEl.clientWidth || 400;
@@ -137,39 +263,25 @@
         canvas.width = w;
         canvas.height = h;
       }
-      ctx.fillStyle = "#05070b";
-      ctx.fillRect(0, 0, w, h);
-      const R = Math.min(w, h) * 0.36;
-      const cx = w / 2;
-      const cy = h / 2;
-      const g = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.3, R * 0.1, cx, cy, R);
-      g.addColorStop(0, "#1b4a66");
-      g.addColorStop(1, "#0b1c33");
-      ctx.beginPath();
-      ctx.arc(cx, cy, R, 0, Math.PI * 2);
-      ctx.fillStyle = g;
-      ctx.fill();
-      ctx.strokeStyle = "rgba(212,179,106,0.35)";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      ctx.fillStyle = "rgba(61,90,58,0.85)";
-      [
-        [10, 50], [20, 10], [70, 45], [100, 20], [135, -25],
-        [-100, 50], [-70, 20], [-60, -20],
-      ].forEach(([lon, lat]) => {
-        const p = project(lat, lon);
-        if (!p) return;
+      drawStars(ctx, w, h);
+      if (pixels) paintTexturedSphere(ctx, pixels, w, h);
+      else {
+        const R = Math.min(w, h) * 0.38;
         ctx.beginPath();
-        ctx.ellipse(p.x, p.y, 22, 14, 0, 0, Math.PI * 2);
+        ctx.arc(w / 2, h / 2, R, 0, Math.PI * 2);
+        ctx.fillStyle = "#0a2740";
         ctx.fill();
-      });
+      }
       visible.forEach((feed) => {
-        const p = project(feed.lat, feed.lon);
+        const p = projectWorld(feed.lat, feed.lon, w, h);
         if (!p) return;
         ctx.beginPath();
         ctx.arc(p.x, p.y, selected && selected.id === feed.id ? 5 : 3, 0, Math.PI * 2);
-        ctx.fillStyle = selected && selected.id === feed.id ? "#6ec8d4" : "#d4b36a";
+        ctx.fillStyle = selected && selected.id === feed.id ? "#f4f7ff" : "#ffd36a";
+        ctx.strokeStyle = "rgba(0,0,0,0.45)";
+        ctx.lineWidth = 1;
         ctx.fill();
+        ctx.stroke();
       });
     }
 
@@ -177,10 +289,12 @@
       const rect = canvas.getBoundingClientRect();
       const x = ev.clientX - rect.left;
       const y = ev.clientY - rect.top;
+      const w = canvas.width;
+      const h = canvas.height;
       let best = null;
-      let bestD = 12;
+      let bestD = 14;
       visible.forEach((feed) => {
-        const p = project(feed.lat, feed.lon);
+        const p = projectWorld(feed.lat, feed.lon, w, h);
         if (!p) return;
         const d = Math.hypot(p.x - x, p.y - y);
         if (d < bestD) {
@@ -203,17 +317,22 @@
     window.addEventListener("pointermove", (ev) => {
       if (!dragging) return;
       rotY -= (ev.clientX - lastX) * 0.008;
+      rotX = Math.max(-1.15, Math.min(1.15, rotX + (ev.clientY - lastY) * 0.006));
       lastX = ev.clientX;
       lastY = ev.clientY;
       draw();
     });
+    canvas.addEventListener("wheel", (ev) => {
+      ev.preventDefault();
+      dist = Math.max(MIN_DIST, Math.min(MAX_DIST, dist + ev.deltaY * 0.01));
+    }, { passive: false });
     window.addEventListener("resize", draw);
 
     let raf = 0;
     function loop() {
       if (!alive) return;
       if (!dragging) {
-        rotY += 0.004;
+        rotY += 0.0024;
         draw();
       }
       raf = requestAnimationFrame(loop);
@@ -222,6 +341,10 @@
 
     return {
       draw,
+      setEarth(img) {
+        pixels = img ? cachePixels(img) : null;
+        draw();
+      },
       destroy() {
         cancelAnimationFrame(raf);
         if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
@@ -231,49 +354,52 @@
 
   function start3d() {
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x05070b, 0.035);
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 80);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setClearColor(0x05070b, 1);
+    renderer.setClearColor(0x03050a, 1);
     sceneEl.appendChild(renderer.domElement);
+
+    const starsGeo = new THREE.BufferGeometry();
+    const starPos = new Float32Array(300 * 3);
+    for (let i = 0; i < starPos.length; i += 3) {
+      const a = Math.random() * Math.PI * 2;
+      const b = Math.acos(2 * Math.random() - 1);
+      const r = 28 + Math.random() * 18;
+      starPos[i] = r * Math.sin(b) * Math.cos(a);
+      starPos[i + 1] = r * Math.cos(b);
+      starPos[i + 2] = r * Math.sin(b) * Math.sin(a);
+    }
+    starsGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+    scene.add(new THREE.Points(starsGeo, new THREE.PointsMaterial({ color: 0xdde6ff, size: 0.08 })));
+
     const earth = new THREE.Group();
     scene.add(earth);
-    scene.add(new THREE.AmbientLight(0x6a7a8c, 0.55));
-    const sun = new THREE.DirectionalLight(0xfff4d6, 1.05);
-    sun.position.set(-4, 2, 6);
+    scene.add(new THREE.AmbientLight(0x6f8498, 0.42));
+    const sun = new THREE.DirectionalLight(0xfff6e4, 1.25);
+    sun.position.set(-5, 2.2, 4.5);
     scene.add(sun);
-    function paintEarth() {
-      const w = 1024;
-      const h = 512;
-      const c = document.createElement("canvas");
-      c.width = w;
-      c.height = h;
-      const g = c.getContext("2d");
-      g.fillStyle = "#12344d";
-      g.fillRect(0, 0, w, h);
-      g.fillStyle = "#3d5a3a";
-      [
-        [-100, 50, 55, 28], [-70, 20, 28, 42], [-60, -20, 22, 38],
-        [10, 50, 40, 22], [20, 10, 28, 42], [70, 45, 70, 30],
-        [100, 20, 40, 28], [135, -25, 28, 18],
-      ].forEach(([lon, lat, rw, rh]) => {
-        g.beginPath();
-        g.ellipse(((lon + 180) / 360) * w, ((90 - lat) / 180) * h, (rw / 360) * w, (rh / 180) * h, 0, 0, Math.PI * 2);
-        g.fill();
-      });
-      return c;
-    }
-    const texture = new THREE.CanvasTexture(paintEarth());
+    const fill = new THREE.DirectionalLight(0x4d6d9a, 0.28);
+    fill.position.set(4, -1, -3);
+    scene.add(fill);
+
+    const globeMat = new THREE.MeshPhongMaterial({
+      color: 0x0a2740,
+      shininess: 14,
+      specular: 0x2a4d6a,
+    });
+    const globe = new THREE.Mesh(new THREE.SphereGeometry(2, 96, 64), globeMat);
+    earth.add(globe);
     earth.add(new THREE.Mesh(
-      new THREE.SphereGeometry(2, 64, 48),
-      new THREE.MeshPhongMaterial({ map: texture, shininess: 8 }),
+      new THREE.SphereGeometry(2.045, 64, 48),
+      new THREE.MeshBasicMaterial({ color: 0x7ec8ff, transparent: true, opacity: 0.07, side: THREE.BackSide }),
     ));
+
     const markers = new THREE.Group();
     earth.add(markers);
-    const pinGeo = new THREE.SphereGeometry(0.035, 10, 8);
-    const pinMat = new THREE.MeshBasicMaterial({ color: 0xd4b36a });
-    const pinSel = new THREE.MeshBasicMaterial({ color: 0x6ec8d4 });
+    const pinGeo = new THREE.SphereGeometry(0.032, 10, 8);
+    const pinMat = new THREE.MeshBasicMaterial({ color: 0xffd36a });
+    const pinSel = new THREE.MeshBasicMaterial({ color: 0xf4f7ff });
     let dragging = false;
     let lastX = 0;
     let lastY = 0;
@@ -302,7 +428,7 @@
       while (markers.children.length) markers.remove(markers.children[0]);
       visible.forEach((feed) => {
         const mesh = new THREE.Mesh(pinGeo, selected && selected.id === feed.id ? pinSel : pinMat);
-        mesh.position.copy(latLonToVec(feed.lat, feed.lon, 2.04));
+        mesh.position.copy(latLonToVec(feed.lat, feed.lon, 2.05));
         mesh.userData.feed = feed;
         markers.add(mesh);
       });
@@ -343,7 +469,7 @@
     window.addEventListener("pointermove", (ev) => {
       if (!dragging) return;
       rotY -= (ev.clientX - lastX) * 0.005;
-      rotX = Math.max(-1.1, Math.min(1.1, rotX + (ev.clientY - lastY) * 0.005));
+      rotX = Math.max(-1.15, Math.min(1.15, rotX + (ev.clientY - lastY) * 0.005));
       lastX = ev.clientX;
       lastY = ev.clientY;
     });
@@ -355,7 +481,7 @@
 
     function loop() {
       if (!alive) return;
-      if (!dragging) rotY += 0.0012;
+      if (!dragging) rotY += 0.0011;
       applyCamera();
       renderer.render(scene, camera);
       raf = requestAnimationFrame(loop);
@@ -364,6 +490,16 @@
     loop();
     return {
       draw,
+      setEarth(img) {
+        if (!img) return;
+        const tex = new THREE.Texture(img);
+        tex.needsUpdate = true;
+        if (tex.minFilter !== undefined) tex.minFilter = THREE.LinearFilter;
+        globeMat.map = tex;
+        globeMat.color = new THREE.Color(0xffffff);
+        globeMat.needsUpdate = true;
+        draw();
+      },
       destroy() {
         cancelAnimationFrame(raf);
         renderer.dispose();
@@ -388,6 +524,16 @@
     if (backend) backend.destroy();
   }
 
+  function loadEarth() {
+    const img = new Image();
+    img.onload = () => {
+      earthImage = img;
+      if (backend && backend.setEarth) backend.setEarth(img);
+    };
+    img.onerror = () => post("map.error", { reason: "earth-texture" });
+    img.src = EARTH_URL;
+  }
+
   window.addEventListener("message", onHost);
   window.addEventListener("pagehide", destroy);
   window.JARVIS_GLOBE = { focusLatLon, addFeeds, loadSet: showFeeds, query, destroy };
@@ -399,6 +545,7 @@
     post("map.error", { reason: "webgl" });
     backend = start2d();
   }
+  loadEarth();
 
   fetch("feeds.json")
     .then((r) => r.json())

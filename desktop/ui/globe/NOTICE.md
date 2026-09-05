@@ -21,3 +21,10 @@ and fight the HUD chrome. License of the upstream project is still MIT.
 
 `feeds.json` is a short curated city list written for this repo (not the
 WebcamMap ~10k dump, not ODbL). Live YouTube/HLS are out of this slice.
+
+## Earth texture
+
+`textures/earth.jpg` is a 2048×1024 downsample of NASA Blue Marble
+(land surface, shallow water, shaded topography). Public domain
+(NASA / US Government). Original: Visible Earth / Blue Marble 2002,
+Reto Stöckli, Robert Simmon, NASA GSFC.
