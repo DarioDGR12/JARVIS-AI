@@ -1,6 +1,6 @@
 # Plan de integración JARVIS-AI
 
-**Estado:** Producto usable (bus + Hermes + TTS Piper + app Tauri + HUD + globo + visión de pantalla + webcam HUD). La webcam es **una** `getUserMedia` del HUD; `hud.camera hold` detiene los tracks para que Howdy abra V4L2. Howdy / HA / memoria / phrase-map están. Vigilancia YOLO y mem0 OSS **aún no**.  
+**Estado:** Producto usable + **ronda 1** de 9 agentes Iron Man (voz stub, visor, pantalla→Hermes, officer, presencia, torre HA, recuerda/olvida, briefing, puerta out-of-tree). YOLO y mem0 Cloud **fuera**. Ver [docs/AGENTS.md](AGENTS.md).  
 **Fecha:** 2026-09-04  
 **Repo:** [DarioDGR12/JARVIS-AI](https://github.com/DarioDGR12/JARVIS-AI) (licencia Apache-2.0)  
 **Plataforma objetivo:** Pop!_OS (COSMIC / GNOME, Linux, Wayland)  

@@ -87,6 +87,15 @@
       list.appendChild(el);
     });
     applyCamFromHud(hud);
+    applyVisor(!!hud.visor, { remote: true });
+    if (hud.presence !== undefined && hud.presence !== null) {
+      document.body.dataset.presence = hud.presence ? "1" : "0";
+    }
+    const hl = document.getElementById("screen-highlight");
+    if (hl && hud.last_display && hud.last_display.kind === "highlight") {
+      hl.hidden = false;
+      setTimeout(() => { hl.hidden = true; }, 4000);
+    }
   }
 
   function paintView(name) {
@@ -145,10 +154,23 @@
       || ev.type === "hud.highlight" || ev.type === "brain.status" || ev.type === "persona.changed"
       || ev.type === "auth.challenge" || ev.type === "auth.result" || ev.type === "hud.ready"
       || ev.type === "hud.camera" || ev.type === "vision.screen_context" || ev.type === "vision.error"
-      || ev.type === "vision.watch") {
+      || ev.type === "vision.watch" || ev.type === "hud.visor" || ev.type === "hud.presence"
+      || ev.type === "voice.wake" || ev.type === "system.alert" || ev.type === "surveillance.alert") {
       refreshHud();
     }
     if (ev.type === "hud.camera") applyCamFromHud(ev.payload || {});
+    if (ev.type === "hud.visor") applyVisor(!!(ev.payload && ev.payload.enabled), { remote: true });
+    if (ev.type === "voice.wake") {
+      q.focus();
+      document.body.dataset.mode = "listening";
+    }
+    if (ev.type === "hud.highlight") {
+      const box = document.getElementById("screen-highlight");
+      if (box) {
+        box.hidden = false;
+        setTimeout(() => { box.hidden = true; }, 4000);
+      }
+    }
     if (String(ev.type).indexOf("vision.") === 0) refreshVision();
   }
 
@@ -437,6 +459,66 @@
     }
   }
 
+  async function applyVisor(enabled, opts) {
+    const remote = opts && opts.remote;
+    document.body.dataset.visor = enabled ? "on" : "off";
+    const btn = document.getElementById("btn-visor");
+    if (btn) btn.classList.toggle("visor-on", enabled);
+    const api = tauri();
+    if (api && api.core && api.core.invoke) {
+      try { await api.core.invoke("set_visor", { enabled }); } catch { /* ignore */ }
+    }
+    if (!remote) {
+      try {
+        const base = await brainUrl();
+        await fetch(base + "/api/hud/visor", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled }),
+        });
+      } catch (err) {
+        console.error("visor", err);
+      }
+    }
+    if (enabled && currentView !== "home") paintView("home");
+  }
+
+  let lastPresence = null;
+  async function samplePresence() {
+    if (!camStream) {
+      if (lastPresence !== null) {
+        lastPresence = null;
+        document.body.dataset.presence = "";
+      }
+      return;
+    }
+    const video = document.getElementById("cam-home") || document.getElementById("cam-vision");
+    if (!video || !video.videoWidth) return;
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 32;
+      canvas.height = 24;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, 32, 24);
+      const data = ctx.getImageData(0, 0, 32, 24).data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) sum += data[i] + data[i + 1] + data[i + 2];
+      const mean = sum / ((data.length / 4) * 3);
+      const present = mean > 12;
+      if (present === lastPresence) return;
+      lastPresence = present;
+      document.body.dataset.presence = present ? "1" : "0";
+      const base = await brainUrl();
+      await fetch(base + "/api/hud/presence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ present, source: "webcam" }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
   async function toggleCamButton() {
     if (document.body.classList.contains("cam-hold")) return;
     if (camStream || camHoldReleased) {
@@ -557,9 +639,13 @@
       const auth = s.auth && s.auth.enrolled ? "howdy" : "sin howdy";
       const hud = s.hud || {};
       const cam = hud.camera_hold ? "cam hold" : (hud.camera_enabled ? (hud.camera_label || "cam") : "sin cam");
+      const seat = hud.presence === true ? "piloto" : (hud.presence === false ? "vacío" : "");
       meta.textContent = (s.ok ? "en línea" : "Hermes caído") + " · " + mode
         + (s.tts ? " · voz " + s.tts : " · sin voz") + " · " + auth
-        + " · " + cam + " · HUD " + (hud.operational || "?");
+        + " · " + cam
+        + (seat ? " · " + seat : "")
+        + (hud.visor ? " · visor" : "")
+        + " · HUD " + (hud.operational || "?");
       if (p.provider) providerEl.value = p.provider;
       if (p.model) document.getElementById("model").value = p.model;
       if (p.base_url) document.getElementById("base-url").value = p.base_url;
@@ -654,13 +740,27 @@
         "Howdy: " + (a.enrolled ? "compare.py listo" : "no instalado") +
         " · V4L2 " + (a.camera || "?") +
         (a.compare_path ? " · " + a.compare_path : "");
-      const hud = await fetch(base + "/api/hud").then((r) => r.json());
+      const hud = s.hud || await fetch(base + "/api/hud").then((r) => r.json());
       const camLine = document.getElementById("cam-line");
       if (camLine) {
         camLine.textContent = "Webcam HUD: "
           + (hud.camera_enabled ? (hud.camera_label || "encendida") : "apagada")
           + (hud.camera_hold ? " · HOLD Howdy (V4L2 libre)" : "")
+          + (hud.presence === true ? " · piloto" : "")
           + (hud.camera_error ? " · " + hud.camera_error : "");
+      }
+      const voice = s.voice || {};
+      const voiceLine = document.getElementById("voice-line");
+      if (voiceLine) {
+        voiceLine.textContent = "Voz: wake " + (voice.wake || "?") + " · STT " + (voice.stt || "?");
+      }
+      const surv = s.surv || {};
+      const survLine = document.getElementById("surv-line");
+      if (survLine) {
+        survLine.textContent = "Puerta: "
+          + (surv.armed ? "armada" : "desarmada")
+          + " · " + (surv.policy || "external")
+          + (surv.last ? " · último " + (surv.last.text || "") : "");
       }
     } catch (err) {
       document.getElementById("sys-stats").textContent = String(err);
@@ -677,29 +777,40 @@
         document.getElementById("ha-msg").textContent = s.error || "HA no configurado";
         return;
       }
-      document.getElementById("ha-msg").textContent = (s.states || []).length + " entidades";
-      (s.states || []).forEach((ent) => {
-        const row = document.createElement("div");
-        row.className = "entity";
-        row.innerHTML = "<span>" + (ent.name || ent.entity_id) + "</span><span>" + (ent.state || "") + "</span>";
-        if (String(ent.entity_id || "").startsWith("light.") || String(ent.entity_id || "").startsWith("switch.")) {
-          const toggle = document.createElement("button");
-          toggle.textContent = "toggle";
-          toggle.onclick = async () => {
-            const domain = ent.entity_id.split(".")[0];
-            const r = await fetch(base + "/api/ha/call", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ domain, service: "toggle", entity_id: ent.entity_id }),
-            });
-            const data = await r.json();
-            document.getElementById("ha-msg").textContent = data.ok ? "ok" : (data.error || "fail");
-            await refreshHud();
-            loadHa();
-          };
-          row.appendChild(toggle);
-        }
-        box.appendChild(row);
+      const states = s.states || [];
+      document.getElementById("ha-msg").textContent = states.length + " entidades";
+      const groups = {};
+      states.forEach((ent) => {
+        const domain = String(ent.entity_id || "").split(".")[0] || "otros";
+        (groups[domain] = groups[domain] || []).push(ent);
+      });
+      Object.keys(groups).sort().forEach((domain) => {
+        const head = document.createElement("h3");
+        head.textContent = domain + " · " + groups[domain].length;
+        head.style.cssText = "margin:12px 0 6px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--accent)";
+        box.appendChild(head);
+        groups[domain].forEach((ent) => {
+          const row = document.createElement("div");
+          row.className = "entity";
+          row.innerHTML = "<span>" + (ent.name || ent.entity_id) + "</span><span>" + (ent.state || "") + "</span>";
+          if (domain === "light" || domain === "switch") {
+            const toggle = document.createElement("button");
+            toggle.textContent = "toggle";
+            toggle.onclick = async () => {
+              const r = await fetch(base + "/api/ha/call", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ domain, service: "toggle", entity_id: ent.entity_id }),
+              });
+              const data = await r.json();
+              document.getElementById("ha-msg").textContent = data.ok ? "ok" : (data.error || "fail");
+              await refreshHud();
+              loadHa();
+            };
+            row.appendChild(toggle);
+          }
+          box.appendChild(row);
+        });
       });
     } catch (err) {
       document.getElementById("ha-msg").textContent = String(err);
@@ -728,6 +839,9 @@
   document.getElementById("btn-back").addEventListener("click", () => showView("home"));
   document.getElementById("btn-capture").addEventListener("click", captureScreen);
   document.getElementById("btn-watch").addEventListener("click", toggleWatch);
+  document.getElementById("btn-visor").addEventListener("click", () => {
+    applyVisor(document.body.dataset.visor !== "on");
+  });
   document.getElementById("btn-cam").addEventListener("click", toggleCamButton);
   document.getElementById("btn-cam-home").addEventListener("click", (ev) => {
     ev.stopPropagation();
@@ -766,5 +880,6 @@
   markReady();
   refresh();
   setInterval(refresh, 8000);
+  setInterval(samplePresence, 2500);
   q.focus();
 })();

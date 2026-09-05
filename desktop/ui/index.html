@@ -28,6 +28,7 @@
       <button type="button" data-view="map">Mapa</button>
       <button type="button" data-view="vision">Visión</button>
       <button type="button" data-view="settings">Ajustes</button>
+      <button type="button" id="btn-visor">Visor</button>
     </nav>
   </header>
 
@@ -86,6 +87,8 @@
     <pre id="sys-stats">…</pre>
     <p class="lead" id="auth-line">Howdy: …</p>
     <p class="lead" id="cam-line">Webcam HUD: …</p>
+    <p class="lead" id="voice-line">Voz: …</p>
+    <p class="lead" id="surv-line">Puerta: …</p>
   </section>
 
   <section id="ha-view" hidden>
@@ -118,6 +121,7 @@
         <div class="cam-frame tall">
           <img id="screen-preview" alt="captura de pantalla" hidden />
           <div id="screen-empty" class="cam-empty">sin captura</div>
+          <div id="screen-highlight" hidden></div>
         </div>
         <div class="row">
           <button type="button" id="btn-capture">Capturar</button>

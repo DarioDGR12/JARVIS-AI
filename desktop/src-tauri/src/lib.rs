@@ -7,11 +7,27 @@ fn brain_url() -> String {
     std::env::var("JARVIS_BRAIN_URL").unwrap_or_else(|_| "http://127.0.0.1:8765".into())
 }
 
+#[tauri::command]
+fn set_visor(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let Some(win) = app.get_webview_window("main") else {
+        return Ok(());
+    };
+    win.set_always_on_top(enabled)
+        .map_err(|err| err.to_string())?;
+    let size = if enabled {
+        tauri::LogicalSize::new(440.0, 560.0)
+    } else {
+        tauri::LogicalSize::new(1040.0, 700.0)
+    };
+    let _ = win.set_size(tauri::Size::Logical(size));
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![brain_url])
+        .invoke_handler(tauri::generate_handler![brain_url, set_visor])
         .setup(|app| {
             let show = MenuItem::with_id(app, "show", "Mostrar", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?;

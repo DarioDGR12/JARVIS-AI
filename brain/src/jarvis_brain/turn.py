@@ -65,6 +65,7 @@ async def run_text_turn(
             )
         )
     hit = match_phrase(user_text)
+    extra_context = ""
     if hit:
         await bus.publish(
             new_event(
@@ -86,62 +87,104 @@ async def run_text_turn(
                 await bus.publish(
                     new_event("vision.error", {"reason": str(exc)}, source="vision")
                 )
-        await bus.publish(
-            new_event(
-                "assistant.text",
-                {"text": reply, "session_id": session_id, "via": "phrase-map"},
-                source="brain",
-            )
-        )
-        await bus.publish(
-            new_event(
-                "hud.display",
-                {"kind": "text", "content": reply, "title": hit.action},
-                source="brain",
-            )
-        )
-        if hit.action in {"map.show", "map.focus", "map.query"}:
-            await bus.publish(
-                new_event("hud.show_view", {"view": "map", "visible": True}, source="brain")
-            )
-        if hit.action == "map.focus":
-            await bus.publish(new_event("map.focus", hit.payload, source="brain"))
-        elif hit.action == "map.query":
-            await bus.publish(new_event("map.query", hit.payload, source="brain"))
-        elif hit.action == "vision.capture":
+        elif hit.action == "vision.explain" and vision is not None:
+            try:
+                shot = await asyncio.to_thread(vision.capture_once)
+                extra_context = (
+                    f"Screen context ({shot.width}×{shot.height} via {shot.backend}):\n"
+                    f"{shot.summary()}\n{shot.ocr}".strip()
+                )
+                await bus.publish(
+                    new_event("vision.screen_context", shot.to_payload(), source="vision")
+                )
+                await bus.publish(
+                    new_event(
+                        "hud.highlight",
+                        {"target": "screen", "reason": "explain"},
+                        source="brain",
+                    )
+                )
+            except Exception as exc:
+                extra_context = f"Screen capture failed: {exc}"
+                await bus.publish(
+                    new_event("vision.error", {"reason": str(exc)}, source="vision")
+                )
+        elif hit.action == "memory.add" and memory is not None:
+            memory.add(str(hit.payload.get("text") or user_text), role="fact")
+        elif hit.action == "memory.forget" and memory is not None:
+            removed = memory.forget(query=str(hit.payload.get("query") or ""))
+            reply = f"Olvidado ({removed})." if removed else "No había nada con eso."
+        if hit.handoff:
             await bus.publish(
                 new_event("hud.show_view", {"view": "vision", "visible": True}, source="brain")
             )
-        elif hit.action == "vision.camera":
-            await bus.publish(
-                new_event("hud.show_view", {"view": "vision", "visible": True}, source="brain")
-            )
+        else:
             await bus.publish(
                 new_event(
-                    "hud.camera",
-                    {"enabled": bool(hit.payload.get("enabled")), "hold": False},
+                    "assistant.text",
+                    {"text": reply, "session_id": session_id, "via": "phrase-map"},
                     source="brain",
                 )
             )
-        if tts and reply:
-            await speak_reply(tts, bus, reply, voice=voice, session_id=session_id)
-        await bus.publish(
-            new_event(
-                "brain.status",
-                {"state": "idle", "session_id": session_id},
-                source="brain",
+            await bus.publish(
+                new_event(
+                    "hud.display",
+                    {"kind": "text", "content": reply, "title": hit.action},
+                    source="brain",
+                )
             )
-        )
-        await bus.publish(
-            new_event(
-                "hud.set_mode",
-                {"operational": "standby", "visual": persona},
-                source="brain",
+            if hit.action in {"map.show", "map.focus", "map.query", "map.brief"}:
+                await bus.publish(
+                    new_event("hud.show_view", {"view": "map", "visible": True}, source="brain")
+                )
+            if hit.action == "map.focus":
+                await bus.publish(new_event("map.focus", hit.payload, source="brain"))
+            elif hit.action == "map.query":
+                await bus.publish(new_event("map.query", hit.payload, source="brain"))
+            elif hit.action == "vision.capture":
+                await bus.publish(
+                    new_event("hud.show_view", {"view": "vision", "visible": True}, source="brain")
+                )
+            elif hit.action == "vision.camera":
+                await bus.publish(
+                    new_event("hud.show_view", {"view": "vision", "visible": True}, source="brain")
+                )
+                await bus.publish(
+                    new_event(
+                        "hud.camera",
+                        {"enabled": bool(hit.payload.get("enabled")), "hold": False},
+                        source="brain",
+                    )
+                )
+            elif hit.action == "hud.visor":
+                await bus.publish(
+                    new_event(
+                        "hud.visor",
+                        {"enabled": bool(hit.payload.get("enabled"))},
+                        source="brain",
+                    )
+                )
+            if tts and reply:
+                await speak_reply(tts, bus, reply, voice=voice, session_id=session_id)
+            await bus.publish(
+                new_event(
+                    "brain.status",
+                    {"state": "idle", "session_id": session_id},
+                    source="brain",
+                )
             )
-        )
-        return reply
+            await bus.publish(
+                new_event(
+                    "hud.set_mode",
+                    {"operational": "standby", "visual": persona},
+                    source="brain",
+                )
+            )
+            return reply
 
     facts = memory.overlay_block(user_text) if memory else ""
+    if extra_context:
+        facts = f"{facts}\n\n{extra_context}".strip() if facts else extra_context
     if overlay is not None:
         instructions = overlay
     else:

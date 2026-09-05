@@ -53,6 +53,12 @@ def test_phrase_vision() -> None:
     assert off is not None and off.payload["enabled"] is False
 
 
+def test_phrase_round1_ironman() -> None:
+    assert match_phrase("recuerda que Pop").action == "memory.add"
+    assert match_phrase("briefing").action == "map.brief"
+    assert match_phrase("pon el visor").action == "hud.visor"
+
+
 def test_phrase_map_globe() -> None:
     open_map = match_phrase("abre el mapa")
     assert open_map is not None and open_map.action == "map.show"

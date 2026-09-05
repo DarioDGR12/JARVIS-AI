@@ -20,6 +20,9 @@ def test_repo_contains_tauri_app() -> None:
     assert 'id="btn-capture"' in html
     assert 'id="cam-device"' in html
     assert 'id="btn-cam-home"' in html
+    assert 'id="btn-visor"' in html
+    assert 'id="screen-highlight"' in html
+    assert "set_visor" in (root / "desktop" / "src-tauri" / "src" / "lib.rs").read_text()
     assert "cam-hold-banner" in html
     js = (root / "desktop" / "ui" / "app.js").read_text()
     assert "getUserMedia" in js

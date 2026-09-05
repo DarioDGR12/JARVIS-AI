@@ -53,6 +53,7 @@ body { display: flex; flex-direction: column; position: relative; }
   font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 8px; cursor: pointer;
 }
 #nav button.on { color: var(--accent); border-color: var(--accent); }
+#nav button.visor-on { color: var(--cyan); border-color: var(--cyan); }
 #sys-stats { background: var(--panel); border: 1px solid var(--line); padding: 12px; white-space: pre-wrap; color: var(--text); }
 #ha-states { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; overflow: auto; }
 .entity { display: flex; justify-content: space-between; gap: 8px; border: 1px solid var(--line); padding: 8px 10px; background: var(--panel); font-size: 13px; }
@@ -108,6 +109,22 @@ body.cam-hold .cam-badge { color: var(--danger); border-color: var(--danger); }
 body.cam-hold .cam-hold-banner { display: grid; }
 body.cam-hold video { opacity: 0.15; filter: grayscale(1); }
 #btn-watch.on { border-color: var(--danger); color: var(--danger); }
+#screen-highlight {
+  position: absolute; inset: 8%; border: 2px solid var(--accent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 35%, transparent);
+  pointer-events: none;
+}
+body[data-visor="on"] #nav button:not(#btn-visor) { display: none; }
+body[data-visor="on"] #chat-view,
+body[data-visor="on"] #settings-view,
+body[data-visor="on"] #system-view,
+body[data-visor="on"] #ha-view,
+body[data-visor="on"] #map-view,
+body[data-visor="on"] #vision-view { display: none !important; }
+body[data-visor="on"] #home-view { max-width: none; padding: 10px; }
+body[data-visor="on"] #hud-side { width: 220px; }
+body[data-presence="1"] #cam-pip h3::after { content: " · piloto"; color: var(--cyan); }
+body[data-presence="0"] #cam-pip h3::after { content: " · vacío"; color: var(--mute); }
 #settings-view[hidden], #chat-view[hidden], #system-view[hidden],
 #ha-view[hidden], #home-view[hidden], #map-view[hidden], #vision-view[hidden] { display: none; }
 

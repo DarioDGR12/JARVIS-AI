@@ -94,6 +94,21 @@ class HomeAssistant:
         r.raise_for_status()
         return {"ok": True, "status": r.status_code, "body": r.json() if r.content else None}
 
+    def status_line(self) -> str:
+        if not self.cfg.configured:
+            return "Casa no configurada. URL y token en la vista Casa."
+        try:
+            states = self.states()
+        except Exception as exc:
+            return f"Casa no responde: {exc}"
+        lights = [
+            s
+            for s in states
+            if str(s.get("entity_id") or "").startswith("light.")
+        ]
+        on = [s for s in lights if s.get("state") == "on"]
+        return f"Casa: {len(states)} entidades, {len(on)}/{len(lights)} luces encendidas."
+
 
 def write_ha_config(url: str, token: str) -> Path:
     dest = product_dir()

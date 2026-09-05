@@ -5,6 +5,8 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 
+from jarvis_brain.ha.client import HomeAssistant
+from jarvis_brain.map.briefing import brief_world
 from jarvis_brain.map.feeds import resolve_place
 from jarvis_brain.tools.stats import format_stats, system_stats
 
@@ -15,6 +17,7 @@ class PhraseHit:
     reply: str
     ran: bool
     payload: dict = field(default_factory=dict)
+    handoff: bool = False
 
 
 _VOLUME_UP = re.compile(
@@ -45,9 +48,36 @@ _MAP_FOCUS = re.compile(
     r"\b(d[oó]nde est[aá]|enfoca|focus|mira)\b\s+(.+)$",
     re.I,
 )
+_VISION_EXPLAIN = re.compile(
+    r"\b(explica|analiz[ae]|describe)\b.+\b(pantalla|screen)\b|\bqu[eé] ves\b",
+    re.I,
+)
 _VISION_CAPTURE = re.compile(
     r"\b(captura(r)?( la)? pantalla|screenshot|qu[eé] hay en (la )?pantalla|"
     r"lee(r)? la pantalla|mira( la)? pantalla|what.?s on (the )?screen)\b",
+    re.I,
+)
+_VISOR_OFF = re.compile(
+    r"\b(quita|apaga|cierra|off)\b.+\b(visor|overlay)\b",
+    re.I,
+)
+_VISOR_ON = re.compile(
+    r"\b(pon|activa|enciende|abre|on)\b.+\b(visor|overlay|hud encima)\b"
+    r"|\bvisor\b(\s+(por favor|please))?$",
+    re.I,
+)
+_REMEMBER = re.compile(r"^\s*(recuerda|remember)(?:\s+que)?\s+(.+)$", re.I)
+_FORGET = re.compile(r"^\s*(olvida|forget)(?:\s+que)?\s+(.+)$", re.I)
+_HA_STATUS = re.compile(
+    r"\b(c[oó]mo est[aá] la casa|estado de (la )?casa|home status)\b",
+    re.I,
+)
+_BRIEF_WORLD = re.compile(
+    r"\b(briefing|informe del mundo|qu[eé] pasa en el mundo|world brief)\b",
+    re.I,
+)
+_BRIEF_PLACE = re.compile(
+    r"\b(qu[eé] pasa en|informe de|briefing de)\s+(.+)$",
     re.I,
 )
 _VISION_CAM_OFF = re.compile(
@@ -97,6 +127,37 @@ def match_phrase(text: str) -> PhraseHit | None:
         return None
     if _STATS.search(raw):
         return PhraseHit("system.stats", format_stats(system_stats()), True)
+    if _HA_STATUS.search(raw):
+        return PhraseHit("ha.status", HomeAssistant().status_line(), True)
+    remember = _REMEMBER.match(raw)
+    if remember:
+        fact = remember.group(2).strip()
+        return PhraseHit("memory.add", f"Anotado: {fact}", True, {"text": fact})
+    forget = _FORGET.match(raw)
+    if forget:
+        fact = forget.group(2).strip()
+        return PhraseHit("memory.forget", f"Olvidando: {fact}", True, {"query": fact})
+    if _VISOR_OFF.search(raw):
+        return PhraseHit("hud.visor", "Visor off.", True, {"enabled": False})
+    if _VISOR_ON.search(raw):
+        return PhraseHit("hud.visor", "Visor on.", True, {"enabled": True})
+    if _BRIEF_WORLD.search(raw):
+        text = brief_world(None)
+        return PhraseHit("map.brief", text, True, {"q": ""})
+    brief = _BRIEF_PLACE.search(raw)
+    if brief:
+        q = brief.group(2).strip()
+        if q.lower() not in {"el mundo", "mundo", "the world"}:
+            text = brief_world(q)
+            return PhraseHit("map.brief", text, True, {"q": q})
+    if _VISION_EXPLAIN.search(raw):
+        return PhraseHit(
+            "vision.explain",
+            "Mirando la pantalla.",
+            True,
+            {},
+            handoff=True,
+        )
     if _VISION_CAPTURE.search(raw):
         return PhraseHit("vision.capture", "Capturando la pantalla.", True)
     if _VISION_CAM_OFF.search(raw):
