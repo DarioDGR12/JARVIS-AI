@@ -616,9 +616,19 @@
       handleHeard(last[0] && last[0].transcript);
     };
     rec.onerror = (ev) => {
+      const fatal = ev.error === "not-allowed" || ev.error === "service-not-allowed"
+        || ev.error === "audio-capture";
       if (ev.error === "not-allowed") add("err", "micrófono: permiso denegado");
-      else if (ev.error !== "no-speech" && ev.error !== "aborted") {
+      else if (ev.error === "audio-capture" || ev.error === "service-not-allowed") {
+        add("err", "voz: sin micrófono en este equipo");
+      } else if (ev.error !== "no-speech" && ev.error !== "aborted") {
         add("err", "voz: " + ev.error);
+      }
+      if (fatal) {
+        voiceListening = false;
+        try { rec.onend = null; rec.stop(); } catch { /* ignore */ }
+        if (voiceRec === rec) voiceRec = null;
+        setVoiceUi(false);
       }
     };
     rec.onend = () => {
