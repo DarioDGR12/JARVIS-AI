@@ -13,6 +13,11 @@ def host_allowed(host: str | None) -> bool:
     return any(name.endswith(suffix) for suffix in ALLOWED_SUFFIXES)
 
 
+def url_allowed(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.scheme == "https" and host_allowed(parsed.hostname)
+
+
 def rewrite_playlist(text: str, base: str) -> str:
     lines: list[str] = []
     root = base.rsplit("/", 1)[0] + "/"
@@ -27,8 +32,7 @@ def rewrite_playlist(text: str, base: str) -> str:
 
 
 def fetch_hls(url: str, *, timeout_s: float = 8.0) -> Response:
-    parsed = urlparse(url)
-    if parsed.scheme != "https" or not host_allowed(parsed.hostname):
+    if not url_allowed(url):
         return Response("forbidden host", status_code=400)
     try:
         response = httpx.get(
@@ -45,12 +49,15 @@ def fetch_hls(url: str, *, timeout_s: float = 8.0) -> Response:
         )
     except Exception as exc:
         return Response(str(exc), status_code=502)
+    final = str(response.url)
+    if not url_allowed(final):
+        return Response("forbidden host", status_code=400)
     if response.status_code >= 400:
         return Response(response.text[:200], status_code=response.status_code)
     ctype = (response.headers.get("content-type") or "").lower()
-    if "mpegurl" in ctype or url.endswith(".m3u8"):
+    if "mpegurl" in ctype or final.endswith(".m3u8"):
         return Response(
-            rewrite_playlist(response.text, str(response.url)),
+            rewrite_playlist(response.text, final),
             media_type="application/vnd.apple.mpegurl",
         )
     return Response(

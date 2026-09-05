@@ -34,7 +34,7 @@ class DetectorChild:
         self.debounce_s = float(os.environ.get("JARVIS_YOLO_DEBOUNCE", "8"))
 
     def snapshot(self) -> dict[str, Any]:
-        running = self.proc is not None and self.proc.poll() is None
+        running = self.running()
         return {
             "path": str(self.path) if self.path else None,
             "running": running,
@@ -42,8 +42,16 @@ class DetectorChild:
             "policy": "yolo-out-of-tree",
         }
 
+    def running(self) -> bool:
+        return self.proc is not None and self.proc.poll() is None
+
+    def ensure(self) -> bool:
+        if self.running():
+            return True
+        return self.start()
+
     def start(self) -> bool:
-        if self.proc is not None and self.proc.poll() is None:
+        if self.running():
             return True
         if self.path is None:
             self.last_error = "no detector (set JARVIS_YOLO_DETECT)"

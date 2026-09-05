@@ -7,7 +7,7 @@ from jarvis_brain.bus.server import EventBus
 from jarvis_brain.config import BrainConfig
 from jarvis_brain.hermes.client import StreamEvent
 from jarvis_brain.map.feeds import normalize_feed
-from jarvis_brain.map.hls_proxy import host_allowed, rewrite_playlist
+from jarvis_brain.map.hls_proxy import host_allowed, rewrite_playlist, url_allowed
 from jarvis_brain.memory.layered import LayeredMemory
 from jarvis_brain.memory.mem0_local import local_mem0_config, ollama_up
 from jarvis_brain.memory.store import LocalMemory
@@ -118,6 +118,9 @@ def test_hls_proxy_rewrites_and_blocks() -> None:
     assert host_allowed("nasaplus.akamaized.net") is True
     assert host_allowed("ntv1.akamaized.net") is True
     assert host_allowed("evil.example") is False
+    assert url_allowed("https://nasaplus.akamaized.net/output/16995.m3u8") is True
+    assert url_allowed("http://nasaplus.akamaized.net/output/16995.m3u8") is False
+    assert url_allowed("https://example.com/x.m3u8") is False
     text = rewrite_playlist("#EXTM3U\n16995-0.m3u8\n", "https://nasaplus.akamaized.net/output/16995.m3u8")
     assert "/api/map/hls?u=" in text
     assert "16995-0.m3u8" in text

@@ -131,6 +131,7 @@ class ProductRuntime:
             if not self.surv.armed:
                 break
             try:
+                await asyncio.to_thread(self.surv.child.ensure)
                 detections = await asyncio.to_thread(self.surv.child.tick)
             except Exception:
                 continue
