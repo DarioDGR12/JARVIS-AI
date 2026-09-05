@@ -29,6 +29,7 @@
       <button type="button" data-view="vision">Visión</button>
       <button type="button" data-view="settings">Ajustes</button>
       <button type="button" id="btn-visor">Visor</button>
+      <button type="button" id="btn-overlay" title="Anillo en segunda ventana">Overlay</button>
       <button type="button" id="btn-through" title="Clics atraviesan la ventana">Clics</button>
       <button type="button" id="btn-mic" title="Escuchar">Mic</button>
     </nav>
@@ -110,6 +111,7 @@
       <button type="submit">Guardar HA</button>
     </form>
     <p id="ha-msg" class="msg-line"></p>
+    <div id="ha-schematic" class="schematic" aria-label="esquema casa"></div>
     <div id="ha-states"></div>
   </section>
 
@@ -136,6 +138,7 @@
           <img id="screen-preview" alt="captura de pantalla" hidden />
           <div id="screen-empty" class="cam-empty">sin captura</div>
           <div id="screen-highlight" hidden></div>
+          <div id="screen-regions" hidden></div>
         </div>
         <div class="row">
           <button type="button" id="btn-capture">Capturar</button>

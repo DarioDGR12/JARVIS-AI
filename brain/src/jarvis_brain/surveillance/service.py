@@ -29,9 +29,19 @@ class SurveillanceService:
             "fields": list(PROTOCOL_FIELDS),
             "child": child,
             "installed": bool(child.get("path") or detector_path()),
+            "contract": {
+                "stdin": ["tick", "frame"],
+                "stdout": ["detection", "alert"],
+                "template": "brain/scripts/detect_template.py",
+                "docs": "docs/DETECT.md",
+            },
             "last": self.last_alert,
             "error": self.last_error or child.get("error"),
         }
+
+    def tick_once(self, *, camera: str = "door") -> list[dict[str, Any]]:
+        self.child.ensure()
+        return self.child.tick(camera=camera)
 
     def set_armed(self, armed: bool) -> None:
         self.armed = bool(armed)

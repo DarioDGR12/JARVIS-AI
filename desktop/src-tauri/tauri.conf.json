@@ -20,6 +20,19 @@
         "transparent": true,
         "resizable": true,
         "center": true
+      },
+      {
+        "label": "overlay",
+        "title": "JARVIS overlay",
+        "url": "overlay.html",
+        "width": 280,
+        "height": 280,
+        "decorations": false,
+        "transparent": true,
+        "resizable": false,
+        "visible": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true
       }
     ],
     "security": {

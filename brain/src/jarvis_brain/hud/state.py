@@ -40,6 +40,7 @@ class HudState:
     camera_error: str | None = None
     camera_device: str | None = None
     visor: bool = False
+    overlay: bool = False
     click_through: bool = False
     presence: bool | None = None
     standby_empty: bool = False
@@ -59,6 +60,7 @@ class HudState:
             "camera_error": self.camera_error,
             "camera_device": self.camera_device,
             "visor": self.visor,
+            "overlay": self.overlay,
             "click_through": self.click_through,
             "presence": self.presence,
             "standby_empty": self.standby_empty,
@@ -135,6 +137,8 @@ class HudState:
             self.visor = bool(payload.get("enabled"))
             if not self.visor:
                 self.click_through = False
+        elif event.type == "hud.overlay":
+            self.overlay = bool(payload.get("enabled"))
         elif event.type == "hud.click_through":
             self.click_through = bool(payload.get("enabled"))
         elif event.type == "hud.presence":

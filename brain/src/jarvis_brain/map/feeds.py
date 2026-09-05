@@ -7,6 +7,7 @@ from typing import Any
 from jarvis_brain.product.start import repo_root
 
 FEED_CAP = 80
+LIVE_CAP = 2
 
 CITIES: dict[str, tuple[float, float, str]] = {
     "madrid": (40.4168, -3.7038, "ES"),
@@ -46,6 +47,7 @@ CITIES: dict[str, tuple[float, float, str]] = {
     "iss": (27.5, -80.55, "ISS"),
     "nasa": (29.55, -95.09, "US"),
     "nasa tv": (29.55, -95.09, "US"),
+    "jwst": (29.55, -95.09, "US"),
     "istanbul": (41.0082, 28.9784, "TR"),
     "estambul": (41.0082, 28.9784, "TR"),
 }
@@ -62,7 +64,18 @@ def load_feeds(path: Path | None = None) -> list[dict[str, Any]]:
     raw = json.loads(src.read_text())
     if not isinstance(raw, list):
         return []
-    return [item for item in (normalize_feed(x) for x in raw) if item][:FEED_CAP]
+    feeds = [item for item in (normalize_feed(x) for x in raw) if item][:FEED_CAP]
+    live = 0
+    out: list[dict[str, Any]] = []
+    for item in feeds:
+        if item.get("hls"):
+            live += 1
+            if live > LIVE_CAP:
+                item = dict(item)
+                item["hls"] = ""
+                item["live"] = bool(item.get("img"))
+        out.append(item)
+    return out
 
 
 def normalize_feed(raw: Any) -> dict[str, Any] | None:

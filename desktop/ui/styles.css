@@ -114,6 +114,25 @@ body.cam-hold video { opacity: 0.15; filter: grayscale(1); }
   box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 35%, transparent);
   pointer-events: none;
 }
+#screen-regions { position: absolute; inset: 0; pointer-events: none; }
+.ocr-box {
+  position: absolute; border: 1px solid var(--cyan);
+  color: var(--cyan); font-size: 9px; letter-spacing: 0.06em;
+  padding: 1px 3px; background: rgba(7, 9, 13, 0.45);
+  pointer-events: auto; cursor: pointer;
+}
+.schematic {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0;
+}
+.schematic .zone {
+  border: 1px solid var(--line); padding: 8px 10px; min-height: 52px;
+}
+.schematic .zone.on { border-color: var(--cyan); }
+.schematic .zone h4 {
+  margin: 0 0 4px; font-size: 10px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--accent);
+}
+.schematic .zone p { margin: 0; font-size: 12px; color: var(--mute); }
 body[data-visor="on"] #nav button:not(#btn-visor) { display: none; }
 body[data-visor="on"] #chat-view,
 body[data-visor="on"] #settings-view,

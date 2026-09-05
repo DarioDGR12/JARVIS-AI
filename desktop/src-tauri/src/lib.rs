@@ -77,6 +77,24 @@ fn set_click_through(
     Ok(())
 }
 
+#[tauri::command]
+fn set_overlay(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let Some(win) = app.get_webview_window("overlay") else {
+        return Ok(());
+    };
+    apply_background(&win, true);
+    if enabled {
+        win.set_always_on_top(true)
+            .map_err(|err| err.to_string())?;
+        let _ = win.set_ignore_cursor_events(true);
+        win.show().map_err(|err| err.to_string())?;
+    } else {
+        let _ = win.set_ignore_cursor_events(false);
+        win.hide().map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
 fn spawn_hit_loop(app: tauri::AppHandle, flag: Arc<AtomicU8>) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_millis(40));
@@ -110,7 +128,12 @@ fn spawn_hit_loop(app: tauri::AppHandle, flag: Arc<AtomicU8>) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![brain_url, set_visor, set_click_through])
+        .invoke_handler(tauri::generate_handler![
+            brain_url,
+            set_visor,
+            set_click_through,
+            set_overlay
+        ])
         .setup(|app| {
             let flag = Arc::new(AtomicU8::new(0));
             app.manage(HitMode(flag.clone()));

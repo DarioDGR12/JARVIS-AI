@@ -3,17 +3,17 @@
 Nueve agentes. Cada ronda investiga, corta un slice usable y pasa QA.  
 **No** YOLO en el árbol (AGPL). **No** `Memory()` default (OpenAI + PostHog).
 
-| ID | Frente | Ronda 1 | Ronda 2 | Ronda 3 |
-|---|---|---|---|---|
-| A-VOICE | Wake + STT + barge-in | Contrato + API. Sin modelos. | Mic HUD + Web Speech + barge-in | openWakeWord + faster-whisper (extras) + PCM |
-| A-VISOR | Overlay always-on-top | Visor compacto + Tauri `set_always_on_top` | Click-through (`set_ignore_cursor_events`) | Transparente + hit-test por región |
-| A-SIGHT | Pantalla → Hermes | `explica la pantalla` hace handoff con OCR | Abrir URLs del OCR (Howdy) | — |
-| A-OFFICER | Watchdog proactivo | Load/RAM/temp + cooldown + toasts | Hermes caído + hablar alertas | — |
-| A-PRESENCE | Presencia webcam | Luma del frame → `hud.presence` | Standby al irte (sin apagar cam) | — |
-| A-TOWER | Torre HA | «cómo está la casa» + entidades por dominio | «escena noche» + Howdy | — |
-| A-MEM | Memoria | `recuerda que` / `olvida` sobre JSONL | «qué recuerdas» lista hechos | mem0 OSS (Qdrant + Ollama, telemetría off) |
-| A-BRIEF | Briefing globo | Extracto SENTINEL + Tierra NASA | Clima Open-Meteo (offline = skip) | Un HLS vivo (NASA TV / ISS) |
-| A-DOOR | Puerta | Ingest de alerta. Armar pide Howdy. | Protocolo detector + script + HUD | Hijo JSONL fuera del repo |
+| ID | Frente | Ronda 1 | Ronda 2 | Ronda 3 | Ronda 4 |
+|---|---|---|---|---|---|
+| A-VOICE | Wake + STT + barge-in | Contrato + API. Sin modelos. | Mic HUD + Web Speech + barge-in | openWakeWord + faster-whisper (extras) + PCM | PCM HUD→`/ws/voice` si local + install script |
+| A-VISOR | Overlay always-on-top | Visor compacto + Tauri `set_always_on_top` | Click-through (`set_ignore_cursor_events`) | Transparente + hit-test por región | Segunda ventana overlay (anillo) |
+| A-SIGHT | Pantalla → Hermes | `explica la pantalla` hace handoff con OCR | Abrir URLs del OCR (Howdy) | — | Regiones OCR + «clica en …» (Howdy) |
+| A-OFFICER | Watchdog proactivo | Load/RAM/temp + cooldown + toasts | Hermes caído + hablar alertas | — | Horas quietas + perfil desk/server |
+| A-PRESENCE | Presencia webcam | Luma del frame → `hud.presence` | Standby al irte (sin apagar cam) | — | Welcome al volver |
+| A-TOWER | Torre HA | «cómo está la casa» + entidades por dominio | «escena noche» + Howdy | — | Esquema de zonas |
+| A-MEM | Memoria | `recuerda que` / `olvida` sobre JSONL | «qué recuerdas» lista hechos | mem0 OSS (Qdrant + Ollama, telemetría off) | Ranking léxico sin Ollama |
+| A-BRIEF | Briefing globo | Extracto SENTINEL + Tierra NASA | Clima Open-Meteo (offline = skip) | Un HLS vivo (NASA TV / ISS) | 2 feeds + «otro feed» |
+| A-DOOR | Puerta | Ingest de alerta. Armar pide Howdy. | Protocolo detector + script + HUD | Hijo JSONL fuera del repo | Plantilla + contrato `docs/DETECT.md` |
 
 ---
 
@@ -143,3 +143,52 @@ Nueve agentes. Cada ronda investiga, corta un slice usable y pasa QA.
 **Investiga:** ultralytics es AGPL.  
 **Slice:** `DetectorChild` habla JSONL con `$JARVIS_YOLO_DETECT`. Stub de protocolo en `brain/scripts/detect_stub.py` (sin YOLO). Al armar, loop + debounce.  
 **Siguiente:** tu `detect.py` con YOLO26n fuera del repo.
+
+---
+
+## Ronda 4 — resultados
+
+### A-VOICE
+**Investiga:** Los extras `[stt]` no están en esta VM. El HUD no mandaba PCM.  
+**Slice:** si `local.loaded`, Mic abre `/ws/voice` (s16le 16 kHz). Si no, Web Speech. «instala la voz» + `scripts/install_stt.sh`.  
+**Siguiente:** modelos en Pop!_OS.
+
+### A-VISOR
+**Investiga:** visor = misma ventana compacta. Falta overlay solo anillo.  
+**Slice:** ventana Tauri `overlay` (280², transparente, click-through). «pon el overlay» / botón Overlay.  
+**Siguiente:** arrastrar el overlay.
+
+### A-SIGHT
+**Investiga:** OCR sin cajas. Highlight era un marco fijo.  
+**Slice:** Tesseract TSV o tokens del texto → `regions[]`. «clica en …» + `POST /api/vision/click` (Howdy). xdotool solo si `JARVIS_VISION_CLICK=1`.  
+**Siguiente:** teclado en región.
+
+### A-OFFICER
+**Investiga:** Hablaba a cualquier hora.  
+**Slice:** `JARVIS_WATCH_QUIET=23:00-07:00` silencia TTS (toasts siguen). `JARVIS_PROFILE=desk|server`.  
+**Siguiente:** no hablar si el puesto está vacío.
+
+### A-PRESENCE
+**Investiga:** Volver no saludaba. Howdy al mirar sin enrolar = 403 inútil.  
+**Slice:** absent→present → toast «Bienvenido · piloto de vuelta».  
+**Siguiente:** Howdy warm si hay compare.py.
+
+### A-TOWER
+**Investiga:** Casa era lista por dominio.  
+**Slice:** `GET /api/ha/schematic` + grid de zonas. «mapa de la casa».  
+**Siguiente:** planos por habitación.
+
+### A-MEM
+**Investiga:** Sin Ollama, search = substring.  
+**Slice:** n-gramas + tokens. `backend=jsonl+lexical`. Sigue sin `Memory()`.  
+**Siguiente:** fastembed ONNX opcional.
+
+### A-BRIEF
+**Investiga:** Un solo HLS.  
+**Slice:** pin `jwst` (Cosmic Dawn). Cap 2. «otro feed» rota.  
+**Siguiente:** 24/7 si NASA+ publica vivo.
+
+### A-DOOR
+**Investiga:** El stub no documentaba el contrato.  
+**Slice:** `docs/DETECT.md` + `detect_template.py`. Snapshot `contract`. `POST /api/surveillance/tick`.  
+**Siguiente:** tu YOLO26n fuera del repo.

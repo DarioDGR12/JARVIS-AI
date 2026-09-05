@@ -16,5 +16,7 @@ def engine_status(engine: LocalVoiceEngine | None = None) -> dict[str, Any]:
         "barge_in": True,
         "hud": {"wake": "hud-phrase", "stt": "web-speech"},
         "local": local,
-        "note": "Mic HUD + Web Speech. Local = openWakeWord + faster-whisper si están instalados.",
+        "pcm": bool(local.get("loaded")),
+        "install": "cd brain && ./scripts/install_stt.sh",
+        "note": "Mic HUD + Web Speech. Si local.loaded, el HUD manda PCM a /ws/voice.",
     }

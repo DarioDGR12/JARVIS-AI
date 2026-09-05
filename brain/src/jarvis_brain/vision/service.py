@@ -9,6 +9,7 @@ from jarvis_brain.bus.envelope import Event
 from jarvis_brain.vision.capture import CaptureError, GrabResult, grab_screen, session_type
 from jarvis_brain.vision.fingerprint import average_hash, downscale, encode_jpeg, hamming
 from jarvis_brain.vision.ocr import ocr_image
+from jarvis_brain.vision.regions import collect_regions
 
 
 @dataclass
@@ -23,6 +24,7 @@ class ScreenShot:
     jpeg: bytes = b""
     timestamp: int = field(default_factory=lambda: int(time.time() * 1000))
     source: str = "screen"
+    regions: list[dict] = field(default_factory=list)
 
     def summary(self) -> str:
         if self.ocr:
@@ -34,7 +36,7 @@ class ScreenShot:
         return {
             "text": self.text,
             "ocr": self.ocr,
-            "regions": [],
+            "regions": list(self.regions),
             "timestamp": self.timestamp,
             "source": self.source,
             "image_ref": None,
@@ -56,6 +58,7 @@ class VisionService:
         self.watch_enabled: bool = False
         self.interval_ms: int = 15000
         self.last_error: str | None = None
+        self.last_click: dict | None = None
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -64,6 +67,7 @@ class VisionService:
             "watch": self.watch_enabled,
             "interval_ms": self.interval_ms,
             "last": None if self.last_shot is None else self.last_shot.to_payload(),
+            "last_click": self.last_click,
             "error": self.last_error,
         }
 
@@ -84,7 +88,11 @@ class VisionService:
 
             with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmp:
                 img.save(tmp.name)
-                ocr = ocr_image(Path(tmp.name))
+                png_path = Path(tmp.name)
+                ocr = ocr_image(png_path)
+                regions = collect_regions(png_path, ocr, width=img.size[0], height=img.size[1])
+        else:
+            regions = list(self.last_shot.regions) if self.last_shot else []
         text = f"Pantalla {img.size[0]}×{img.size[1]} vía {grab.backend}"
         if not changed:
             text += " (sin cambios)"
@@ -97,6 +105,7 @@ class VisionService:
             height=img.size[1],
             changed=changed,
             jpeg=encode_jpeg(img) if changed or self.last_shot is None else (self.last_shot.jpeg if self.last_shot else b""),
+            regions=regions,
         )
         self.last_fingerprint = fp
         self.last_shot = shot

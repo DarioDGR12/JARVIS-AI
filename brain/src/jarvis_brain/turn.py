@@ -13,6 +13,9 @@ from jarvis_brain.memory.store import LocalMemory  # LayeredMemory duck-types th
 from jarvis_brain.persona.overlay import choose_persona, persona_overlay
 from jarvis_brain.tools.phrase_map import match_phrase
 from jarvis_brain.vision.service import VisionService
+from jarvis_brain.ha.schematic import build_schematic
+from jarvis_brain.vision.click import click_region
+from jarvis_brain.vision.regions import match_region
 from jarvis_brain.vision.urls import extract_urls, open_urls
 from jarvis_brain.voice.tts import LocalTTS, PcmChunk
 
@@ -187,6 +190,57 @@ async def run_text_turn(
                 reply = (
                     "Abrí: " + ", ".join(opened) if opened else "xdg-open no disponible."
                 )
+        elif hit.action == "vision.click" and vision is not None:
+            regions = (vision.last_shot.regions if vision.last_shot else []) or []
+            region = match_region(regions, str(hit.payload.get("text") or ""))
+            if not region:
+                reply = "No hay región que coincida. Captura la pantalla primero."
+            elif auth is not None:
+                gate = auth.require("vision.click", reason="vision.click")
+                if not gate.ok:
+                    reply = "Howdy: hace falta cara para clicar la pantalla."
+                    await bus.publish(
+                        new_event(
+                            "auth.challenge",
+                            {"reason": "vision.click", "tool": "vision.click"},
+                            source="brain",
+                        )
+                    )
+                    await bus.publish(new_event("auth.result", gate.to_payload(), source="auth"))
+                else:
+                    result = click_region(region)
+                    vision.last_click = result
+                    reply = f"Región {region['text']}: {result['reason']}."
+            else:
+                result = click_region(region)
+                vision.last_click = result
+                reply = f"Región {region['text']}: {result['reason']}."
+            if region:
+                await bus.publish(
+                    new_event(
+                        "hud.highlight",
+                        {"target": "screen", "reason": "click", "region": region},
+                        source="brain",
+                    )
+                )
+        elif hit.action == "ha.schematic":
+            states = []
+            if ha is not None and ha.cfg.configured:
+                try:
+                    raw = ha.states()
+                    states = [
+                        {
+                            "entity_id": s.get("entity_id"),
+                            "state": s.get("state"),
+                            "name": (s.get("attributes") or {}).get("friendly_name"),
+                        }
+                        for s in raw
+                    ]
+                except Exception:
+                    states = []
+            schematic = build_schematic(states)
+            bits = [f"{z['label']} {z['on']}/{z['count']}" for z in schematic["zones"]]
+            reply = "Casa: " + (", ".join(bits) if bits else "sin entidades.")
         if hit.handoff:
             await bus.publish(
                 new_event("hud.show_view", {"view": "vision", "visible": True}, source="brain")
@@ -238,6 +292,22 @@ async def run_text_turn(
                         {"enabled": bool(hit.payload.get("enabled"))},
                         source="brain",
                     )
+                )
+            elif hit.action == "hud.overlay":
+                await bus.publish(
+                    new_event(
+                        "hud.overlay",
+                        {"enabled": bool(hit.payload.get("enabled"))},
+                        source="brain",
+                    )
+                )
+            elif hit.action == "ha.schematic":
+                await bus.publish(
+                    new_event("hud.show_view", {"view": "ha", "visible": True}, source="brain")
+                )
+            elif hit.action == "vision.click":
+                await bus.publish(
+                    new_event("hud.show_view", {"view": "vision", "visible": True}, source="brain")
                 )
             elif hit.action == "hud.click_through":
                 await bus.publish(

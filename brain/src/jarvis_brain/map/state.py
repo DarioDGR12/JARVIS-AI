@@ -73,9 +73,17 @@ class MapState:
             }
         elif event.type == "map.live":
             feed_id = str(payload.get("id") or "iss")
+            lives = [f for f in self.feeds if f.get("live")]
+            if feed_id == "next":
+                current = str((self.last_selection or {}).get("feed_id") or "")
+                ids = [str(f.get("id")) for f in lives]
+                if current in ids and len(ids) > 1:
+                    feed_id = ids[(ids.index(current) + 1) % len(ids)]
+                elif ids:
+                    feed_id = ids[0]
             hit = next((f for f in self.feeds if str(f.get("id")) == feed_id), None)
             if hit is None:
-                hit = next((f for f in self.feeds if f.get("live")), None)
+                hit = next((f for f in lives), None)
             if hit:
                 self.last_selection = {
                     "lat": hit.get("lat"),

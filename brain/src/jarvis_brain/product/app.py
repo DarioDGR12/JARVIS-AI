@@ -26,7 +26,10 @@ from jarvis_brain.product.setup import apply_setup, load_product, public_status
 from jarvis_brain.product.start import ensure_stack
 from jarvis_brain.surveillance.service import SurveillanceService
 from jarvis_brain.tools.stats import system_stats
-from jarvis_brain.tools.watchdog import Watchdog
+from jarvis_brain.ha.schematic import build_schematic
+from jarvis_brain.tools.watchdog import Watchdog, in_quiet_hours
+from jarvis_brain.vision.click import click_region
+from jarvis_brain.vision.regions import match_region
 from jarvis_brain.turn import run_text_turn, speak_reply
 from jarvis_brain.vision.service import VisionService
 from jarvis_brain.vision.urls import extract_urls, open_urls
@@ -170,7 +173,7 @@ class ProductRuntime:
                     source="officer",
                 )
             )
-            if self.tts and not self.lock.locked():
+            if self.tts and not self.lock.locked() and not in_quiet_hours():
                 try:
                     async with self.lock:
                         await speak_reply(
@@ -412,6 +415,12 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             )
         return {"ok": True, **runtime.hud.snapshot()}
 
+    @app.post("/api/hud/overlay")
+    async def hud_overlay(body: dict | None = None) -> dict:
+        enabled = bool((body or {}).get("enabled"))
+        await runtime.bus.publish(new_event("hud.overlay", {"enabled": enabled}, source="hud"))
+        return {"ok": True, **runtime.hud.snapshot()}
+
     @app.post("/api/hud/click-through")
     async def hud_click_through(body: dict | None = None) -> dict:
         enabled = bool((body or {}).get("enabled"))
@@ -423,6 +432,7 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
     @app.post("/api/hud/presence")
     async def hud_presence(body: dict | None = None) -> dict:
         present = bool((body or {}).get("present"))
+        was_empty = runtime.hud.standby_empty
         await runtime.bus.publish(
             new_event(
                 "hud.presence",
@@ -430,6 +440,26 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
                 source="hud",
             )
         )
+        if present and was_empty:
+            await runtime.bus.publish(
+                new_event(
+                    "hud.set_mode",
+                    {"operational": "standby", "visual": runtime.hud.visual},
+                    source="brain",
+                )
+            )
+            extra = " · Howdy en espera" if runtime.auth.status().enrolled else ""
+            await runtime.bus.publish(
+                new_event(
+                    "hud.display",
+                    {
+                        "kind": "toast",
+                        "content": "Bienvenido · piloto de vuelta" + extra,
+                        "title": "presencia",
+                    },
+                    source="brain",
+                )
+            )
         if not present:
             await runtime.bus.publish(
                 new_event(
@@ -611,6 +641,29 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
         opened = open_urls(urls)
         return JSONResponse({"ok": True, "opened": opened, "urls": extract_urls(" ".join(urls))})
 
+    @app.post("/api/vision/click")
+    async def vision_click(body: dict | None = None) -> JSONResponse:
+        gate = runtime.auth.require("vision.click", reason="vision.click")
+        if not gate.ok:
+            await runtime.bus.publish(
+                new_event("auth.challenge", {"reason": "vision.click", "tool": "vision.click"}, source="brain")
+            )
+            await runtime.bus.publish(new_event("auth.result", gate.to_payload(), source="auth"))
+            return JSONResponse(
+                {"ok": False, "error": "auth required", "auth": gate.to_payload()},
+                status_code=403,
+            )
+        regions = runtime.vision.last_shot.regions if runtime.vision.last_shot else []
+        region = match_region(regions, str((body or {}).get("text") or ""))
+        if not region:
+            return JSONResponse({"ok": False, "error": "no region"}, status_code=404)
+        result = click_region(region)
+        runtime.vision.last_click = result
+        await runtime.bus.publish(
+            new_event("hud.highlight", {"target": "screen", "reason": "click", "region": region}, source="brain")
+        )
+        return JSONResponse({"ok": True, **result})
+
     @app.get("/api/system")
     async def system() -> dict:
         runtime.ensure_officer_task()
@@ -746,6 +799,15 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
         )
         return {"ok": True, **alert}
 
+    @app.post("/api/surveillance/tick")
+    async def surv_tick(body: dict | None = None) -> dict:
+        hits = runtime.surv.tick_once(camera=str((body or {}).get("camera") or "door"))
+        last = None
+        for det in hits:
+            last = runtime.surv.ingest(det)
+            await runtime.bus.publish(new_event("surveillance.alert", last, source="surv"))
+        return {"ok": True, "hits": hits, "last": last, **runtime.surv.snapshot()}
+
     @app.get("/api/auth")
     async def auth_status() -> dict:
         return {"ok": True, **runtime.auth.status().to_payload(), "cached": runtime.auth.cached()}
@@ -795,6 +857,27 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             in {"light", "switch", "binary_sensor", "sensor", "lock", "climate", "scene"}
         ]
         return JSONResponse({"ok": True, "states": slim[:80]})
+
+    @app.get("/api/ha/schematic")
+    async def ha_schematic() -> JSONResponse:
+        states: list[dict] = []
+        if runtime.ha.cfg.configured:
+            try:
+                raw = runtime.ha.states()
+                states = [
+                    {
+                        "entity_id": s.get("entity_id"),
+                        "state": s.get("state"),
+                        "name": (s.get("attributes") or {}).get("friendly_name"),
+                    }
+                    for s in raw
+                ]
+            except Exception as exc:
+                return JSONResponse(
+                    {"ok": False, "error": str(exc), **build_schematic([])},
+                    status_code=502,
+                )
+        return JSONResponse({"ok": True, **build_schematic(states)})
 
     @app.post("/api/ha/call")
     async def ha_call(body: dict) -> JSONResponse:

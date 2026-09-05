@@ -30,6 +30,7 @@ SENSITIVE = frozenset(
         "shell",
         "vision.watch",
         "vision.open",
+        "vision.click",
         "surveillance.arm",
     }
 )

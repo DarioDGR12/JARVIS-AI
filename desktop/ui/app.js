@@ -160,13 +160,15 @@
       || ev.type === "hud.highlight" || ev.type === "brain.status" || ev.type === "persona.changed"
       || ev.type === "auth.challenge" || ev.type === "auth.result" || ev.type === "hud.ready"
       || ev.type === "hud.camera" || ev.type === "vision.screen_context" || ev.type === "vision.error"
-      || ev.type === "vision.watch" || ev.type === "hud.visor" || ev.type === "hud.presence"
+      || ev.type === "vision.watch" || ev.type === "hud.visor" || ev.type === "hud.overlay"
+      || ev.type === "hud.presence"
       || ev.type === "hud.click_through" || ev.type === "voice.wake" || ev.type === "system.alert"
       || ev.type === "surveillance.alert") {
       refreshHud();
     }
     if (ev.type === "hud.camera") applyCamFromHud(ev.payload || {});
     if (ev.type === "hud.visor") applyVisor(!!(ev.payload && ev.payload.enabled), { remote: true });
+    if (ev.type === "hud.overlay") applyOverlay(!!(ev.payload && ev.payload.enabled), { remote: true });
     if (ev.type === "hud.click_through") applyClickThrough(!!(ev.payload && ev.payload.enabled), { remote: true });
     if (ev.type === "voice.wake") {
       q.focus();
@@ -580,6 +582,29 @@
     if (!enabled) applyClickThrough(false, { remote: true });
   }
 
+  async function applyOverlay(enabled, opts) {
+    const remote = opts && opts.remote;
+    document.body.dataset.overlay = enabled ? "on" : "off";
+    const btn = document.getElementById("btn-overlay");
+    if (btn) btn.classList.toggle("visor-on", enabled);
+    const api = tauri();
+    if (api && api.core && api.core.invoke) {
+      try { await api.core.invoke("set_overlay", { enabled }); } catch { /* ignore */ }
+    }
+    if (!remote) {
+      try {
+        const base = await brainUrl();
+        await fetch(base + "/api/hud/overlay", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled }),
+        });
+      } catch (err) {
+        console.error("overlay", err);
+      }
+    }
+  }
+
   async function applyClickThrough(enabled, opts) {
     const remote = opts && opts.remote;
     document.body.dataset.through = enabled ? "on" : "off";
@@ -675,6 +700,7 @@
   }
 
   function stopListen() {
+    stopPcm();
     if (voiceRec) {
       try { voiceRec.onend = null; voiceRec.stop(); } catch { /* ignore */ }
       voiceRec = null;
@@ -682,15 +708,69 @@
     setVoiceUi(false);
   }
 
+  let pcmSocket = null;
+  let pcmCtx = null;
+  let pcmSource = null;
+
+  async function stopPcm() {
+    if (pcmSource) {
+      try { pcmSource.disconnect(); } catch { /* ignore */ }
+      pcmSource = null;
+    }
+    if (pcmCtx) {
+      try { pcmCtx.close(); } catch { /* ignore */ }
+      pcmCtx = null;
+    }
+    if (pcmSocket) {
+      try { pcmSocket.close(); } catch { /* ignore */ }
+      pcmSocket = null;
+    }
+  }
+
+  async function startPcm() {
+    const base = await brainUrl();
+    const voice = await fetch(base + "/api/voice").then((r) => r.json()).catch(() => ({}));
+    if (!(voice.local && voice.local.loaded)) return false;
+    await stopPcm();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const ws = new WebSocket(base.replace("http", "ws") + "/ws/voice");
+    ws.binaryType = "arraybuffer";
+    pcmSocket = ws;
+    const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    pcmCtx = ctx;
+    const src = ctx.createMediaStreamSource(stream);
+    pcmSource = src;
+    const proc = ctx.createScriptProcessor(4096, 1, 1);
+    proc.onaudioprocess = (ev) => {
+      if (!pcmSocket || pcmSocket.readyState !== 1) return;
+      const input = ev.inputBuffer.getChannelData(0);
+      const pcm = new Int16Array(input.length);
+      for (let i = 0; i < input.length; i++) {
+        const s = Math.max(-1, Math.min(1, input[i]));
+        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      pcmSocket.send(pcm.buffer);
+    };
+    src.connect(proc);
+    proc.connect(ctx.destination);
+    return true;
+  }
+
   function startListen() {
+    bargeIn();
+    if (voiceRec) {
+      try { voiceRec.onend = null; voiceRec.stop(); } catch { /* ignore */ }
+      voiceRec = null;
+    }
+    startPcm().then((used) => {
+      if (used) setVoiceUi(true);
+    }).catch(() => {});
     const Ctor = speechCtor();
     if (!Ctor) {
       add("err", "Web Speech no está en este motor. Escribe o usa POST /api/voice/transcript.");
       q.focus();
       return;
     }
-    bargeIn();
-    stopListen();
     const rec = new Ctor();
     rec.lang = "es-ES";
     rec.interimResults = false;
@@ -813,9 +893,39 @@
       document.getElementById("btn-watch").classList.toggle("on", !!s.watch);
       document.getElementById("btn-watch").textContent = s.watch ? "Parar vigilancia" : "Vigilancia pantalla";
       showScreenPreview(s.preview_jpeg_b64);
+      paintRegions((s.last && s.last.regions) || []);
     } catch (err) {
       document.getElementById("vision-msg").textContent = String(err);
     }
+  }
+
+  function paintRegions(regions) {
+    const layer = document.getElementById("screen-regions");
+    if (!layer) return;
+    layer.innerHTML = "";
+    if (!regions.length) {
+      layer.hidden = true;
+      return;
+    }
+    layer.hidden = false;
+    regions.forEach((reg) => {
+      const box = document.createElement("button");
+      box.type = "button";
+      box.className = "ocr-box";
+      box.style.left = ((reg.x || 0) * 100) + "%";
+      box.style.top = ((reg.y || 0) * 100) + "%";
+      box.style.width = ((reg.w || 0.1) * 100) + "%";
+      box.style.height = ((reg.h || 0.08) * 100) + "%";
+      box.textContent = reg.text || "";
+      box.onclick = () => {
+        brainUrl().then((base) => fetch(base + "/api/vision/click", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: reg.text || "" }),
+        })).catch(() => {});
+      };
+      layer.appendChild(box);
+    });
   }
 
   async function captureScreen() {
@@ -1005,6 +1115,7 @@
       if (voiceLine) {
         voiceLine.textContent = "Voz: wake " + (voice.wake || "?")
           + " · STT " + (voice.stt || "?")
+          + (voice.pcm ? " · PCM" : "")
           + (voice.barge_in ? " · barge-in" : "");
       }
       const surv = s.surv || {};
@@ -1027,6 +1138,24 @@
     }
   }
 
+  function paintSchematic(data, states) {
+    const box = document.getElementById("ha-schematic");
+    if (!box) return;
+    box.innerHTML = "";
+    const zones = (data && data.zones) || [
+      { id: "luces", label: "Luces", on: 0, count: 0 },
+      { id: "clima", label: "Clima", on: 0, count: 0 },
+      { id: "puertas", label: "Puertas", on: 0, count: 0 },
+      { id: "media", label: "Media", on: 0, count: 0 },
+    ];
+    zones.forEach((z) => {
+      const el = document.createElement("div");
+      el.className = "zone" + (z.on ? " on" : "");
+      el.innerHTML = "<h4>" + z.label + "</h4><p>" + (z.on || 0) + "/" + (z.count || 0) + " on</p>";
+      box.appendChild(el);
+    });
+  }
+
   async function loadHa() {
     const box = document.getElementById("ha-states");
     box.textContent = "";
@@ -1035,10 +1164,17 @@
       const s = await fetch(base + "/api/ha/states").then((r) => r.json());
       if (!s.ok) {
         document.getElementById("ha-msg").textContent = s.error || "HA no configurado";
+        paintSchematic(null, []);
         return;
       }
       const states = s.states || [];
       document.getElementById("ha-msg").textContent = states.length + " entidades";
+      try {
+        const sch = await fetch(base + "/api/ha/schematic").then((r) => r.json());
+        paintSchematic(sch, states);
+      } catch {
+        paintSchematic(null, states);
+      }
       const groups = {};
       states.forEach((ent) => {
         const domain = String(ent.entity_id || "").split(".")[0] || "otros";
@@ -1106,6 +1242,12 @@
   document.getElementById("btn-visor").addEventListener("click", () => {
     applyVisor(document.body.dataset.visor !== "on");
   });
+  const overlayBtn = document.getElementById("btn-overlay");
+  if (overlayBtn) {
+    overlayBtn.addEventListener("click", () => {
+      applyOverlay(document.body.dataset.overlay !== "on");
+    });
+  }
   document.getElementById("btn-through").addEventListener("click", () => {
     applyClickThrough(document.body.dataset.through !== "on");
   });

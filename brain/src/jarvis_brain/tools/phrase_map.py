@@ -58,12 +58,38 @@ _VISION_CAPTURE = re.compile(
     re.I,
 )
 _VISOR_OFF = re.compile(
-    r"\b(quita|apaga|cierra|off)\b.+\b(visor|overlay)\b",
+    r"\b(quita|apaga|cierra|off)\b.+\bvisor\b",
     re.I,
 )
 _VISOR_ON = re.compile(
-    r"\b(pon|activa|enciende|abre|on)\b.+\b(visor|overlay|hud encima)\b"
+    r"\b(pon|activa|enciende|abre|on)\b.+\b(visor|hud encima)\b"
     r"|\bvisor\b(\s+(por favor|please))?$",
+    re.I,
+)
+_OVERLAY_OFF = re.compile(
+    r"\b(quita|apaga|cierra|off)\b.+\boverlay\b",
+    re.I,
+)
+_OVERLAY_ON = re.compile(
+    r"\b(pon|activa|enciende|abre|on)\b.+\boverlay\b"
+    r"|\boverlay\b(\s+(por favor|please))?$",
+    re.I,
+)
+_VOICE_INSTALL = re.compile(
+    r"\b(instala|instalar|pon)\b.+\b(voz local|stt local|whisper|wake ?word)\b"
+    r"|\binstala la voz\b",
+    re.I,
+)
+_VISION_CLICK = re.compile(
+    r"\b(clica|clic[aá]?|haz clic|click|pulsa)\b(?:\s+en)?\s+(.+)$",
+    re.I,
+)
+_HA_SCHEMATIC = re.compile(
+    r"\b(mapa de (la )?casa|esquema( de (la )?casa)?|schematic)\b",
+    re.I,
+)
+_LIVE_NEXT = re.compile(
+    r"\b(otro feed|siguiente (feed|directo)|cambia( el)? (feed|directo))\b",
     re.I,
 )
 _REMEMBER = re.compile(r"^\s*(recuerda|remember)(?:\s+que)?\s+(.+)$", re.I)
@@ -112,7 +138,7 @@ _CLICK_THROUGH_OFF = re.compile(
 )
 _LIVE_FEED = re.compile(
     r"\b(feed vivo|directo de la nasa|nasa tv|pon el (feed|directo)|abre (el )?iss|"
-    r"qu[eé] hay en la iss)\b"
+    r"qu[eé] hay en la iss|nasa plus|cosmic dawn|jwst)\b"
     r"|\biss\b(\s+(por favor|please))?$",
     re.I,
 )
@@ -196,16 +222,36 @@ def match_phrase(text: str) -> PhraseHit | None:
             )
     if _VISION_OPEN.search(raw):
         return PhraseHit("vision.open", "Abriendo enlaces de la pantalla.", True)
+    click = _VISION_CLICK.search(raw)
+    if click:
+        target = click.group(2).strip()
+        return PhraseHit("vision.click", f"Clic en {target}.", True, {"text": target})
+    if _HA_SCHEMATIC.search(raw):
+        return PhraseHit("ha.schematic", "Esquema de la casa.", True)
+    if _VOICE_INSTALL.search(raw):
+        return PhraseHit(
+            "voice.install",
+            "En Pop!_OS: cd brain && ./scripts/install_stt.sh "
+            "(pip install -e '.[stt]'). Sin mic, el HUD sigue en Web Speech.",
+            True,
+        )
+    if _OVERLAY_OFF.search(raw):
+        return PhraseHit("hud.overlay", "Overlay off.", True, {"enabled": False})
+    if _OVERLAY_ON.search(raw):
+        return PhraseHit("hud.overlay", "Overlay on.", True, {"enabled": True})
     if _VISOR_OFF.search(raw):
         return PhraseHit("hud.visor", "Visor off.", True, {"enabled": False})
     if _VISOR_ON.search(raw):
         return PhraseHit("hud.visor", "Visor on.", True, {"enabled": True})
+    if _LIVE_NEXT.search(raw):
+        return PhraseHit("map.live", "Siguiente feed vivo.", True, {"id": "next"})
     if _LIVE_FEED.search(raw):
+        feed_id = "jwst" if re.search(r"jwst|cosmic|nasa plus", raw, re.I) else "iss"
         return PhraseHit(
             "map.live",
             "Abriendo el feed vivo.",
             True,
-            {"id": "iss"},
+            {"id": feed_id},
         )
     if _BRIEF_WORLD.search(raw):
         text = brief_world(None)

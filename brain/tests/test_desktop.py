@@ -21,12 +21,16 @@ def test_repo_contains_tauri_app() -> None:
     assert 'id="cam-device"' in html
     assert 'id="btn-cam-home"' in html
     assert 'id="btn-visor"' in html
+    assert 'id="btn-overlay"' in html
+    assert 'id="ha-schematic"' in html
+    assert 'id="screen-regions"' in html
     assert 'id="btn-mic"' in html
     assert 'id="btn-through"' in html
     assert 'id="btn-arm"' in html
     assert 'id="screen-highlight"' in html
     rust = (root / "desktop" / "src-tauri" / "src" / "lib.rs").read_text()
     assert "set_visor" in rust
+    assert "set_overlay" in rust
     assert "set_click_through" in rust
     assert "set_ignore_cursor_events" in rust
     assert "set_background_color" in rust
@@ -45,12 +49,19 @@ def test_repo_contains_tauri_app() -> None:
     assert "SpeechRecognition" in js
     assert "/api/voice/transcript" in js
     assert "playLive" in js
+    assert "startPcm" in js
+    assert "paintSchematic" in js
+    assert "paintRegions" in js
     assert "hls.min.js" in js
     assert 'id="live-video"' in html
     globe = root / "desktop" / "ui" / "globe"
     assert (globe / "vendor" / "hls.min.js").is_file()
     assert '"hls"' in (globe / "feeds.json").read_text()
     assert "nasaplus.akamaized.net" in (globe / "feeds.json").read_text()
+    assert '"jwst"' in (globe / "feeds.json").read_text()
+    assert (root / "desktop" / "ui" / "overlay.html").is_file()
+    assert (root / "brain" / "scripts" / "detect_template.py").is_file()
+    assert (root / "docs" / "DETECT.md").is_file()
     csp = (root / "desktop" / "src-tauri" / "tauri.conf.json").read_text()
     assert "transparent" in csp
     assert "media-src" in csp and "https:" in csp
