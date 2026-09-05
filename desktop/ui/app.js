@@ -294,7 +294,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       })).catch(() => {});
-      sendToGlobe({ type: "hud.gesture", payload });
+      /* Zoom waits for the bus echo so we don't apply the same edge twice. */
     },
   };
 
@@ -1183,7 +1183,14 @@
       { id: "media", label: "Media", on: 0, count: 0 },
     ];
     paintZoneGrid(box, zones, "");
-    paintZoneGrid(rooms, (data && data.rooms) || [], "room");
+    if (rooms) {
+      const list = (data && data.rooms) || [];
+      if (list.length) paintZoneGrid(rooms, list, "room");
+      else {
+        rooms.innerHTML =
+          '<div class="zone room"><h4>Habitaciones</h4><p>sin plano · HA o ~/.config/jarvis/ha-rooms.json</p></div>';
+      }
+    }
   }
 
   async function loadHa() {

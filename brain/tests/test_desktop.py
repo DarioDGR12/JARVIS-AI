@@ -56,6 +56,7 @@ def test_repo_contains_tauri_app() -> None:
     assert "last_selection" in js
     assert "paintSchematic" in js
     assert "jarvisHud" in js
+    assert "ha-rooms.json" in js
     assert "paintRegions" in js
     assert "hls.min.js" in js
     assert 'id="live-video"' in html

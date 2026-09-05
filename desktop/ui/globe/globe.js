@@ -571,7 +571,7 @@
 
   window.addEventListener("message", onHost);
   window.addEventListener("pagehide", destroy);
-  window.JARVIS_GLOBE = { focusLatLon, addFeeds, loadSet: showFeeds, query, destroy };
+  window.JARVIS_GLOBE = { focusLatLon, addFeeds, loadSet: showFeeds, query, destroy, getDist: () => dist };
 
   try {
     backend = canWebGL() ? start3d() : start2d();
