@@ -24,6 +24,7 @@ def test_repo_contains_tauri_app() -> None:
     assert 'id="btn-overlay"' in html
     assert 'id="ha-schematic"' in html
     assert 'id="ha-rooms"' in html
+    assert 'id="doctor-line"' in html
     assert 'id="screen-regions"' in html
     assert "gestures.js" in html
     assert 'id="btn-mic"' in html
@@ -56,6 +57,7 @@ def test_repo_contains_tauri_app() -> None:
     assert "last_selection" in js
     assert "paintSchematic" in js
     assert "jarvisHud" in js
+    assert "doctor-line" in js
     assert "ha-rooms.json" in js
     assert "paintRegions" in js
     assert "hls.min.js" in js
@@ -73,6 +75,10 @@ def test_repo_contains_tauri_app() -> None:
     assert (root / "deploy" / "systemd" / "jarvis-brain.service").is_file()
     assert (root / "deploy" / "kiosk" / "jarvis-kiosk.sh").is_file()
     assert (root / "voices" / "jarvis.wav").is_file()
+    assert (root / "docs" / "POPOS.md").is_file()
+    assert (root / "scripts" / "popos-trial.sh").is_file()
+    assert (root / "deploy" / "env" / "brain.env.example").is_file()
+    assert (root / "deploy" / "desktop" / "jarvis.desktop").is_file()
     assert (root / "brain" / "scripts" / "detect_template.py").is_file()
     assert (root / "docs" / "DETECT.md").is_file()
     csp = (root / "desktop" / "src-tauri" / "tauri.conf.json").read_text()

@@ -34,7 +34,7 @@ bash scripts/qa_phase1.sh
 
 Éxito = la respuesta contiene `JARVIS_PHASE1_OK` y el mock LLM reporta `overlay_seen: true`.
 
-Bus: `ws://0.0.0.0:8765/ws/bus` y `POST /api/bus` (host/puerto vía `JARVIS_BUS_HOST` / `PORT` / `JARVIS_BUS_PORT`).
+Bus: `ws://127.0.0.1:8765/ws/bus` (host/puerto vía `JARVIS_BUS_HOST` / `JARVIS_BUS_PORT`).
 Voz PCM: `ws://…/ws/voice` (s16le mono 16 kHz, canal aparte).
 
 ## TTS local (Fase 2)

@@ -18,12 +18,12 @@ from jarvis_brain.memory.mem0_local import Mem0Local
 from jarvis_brain.memory.store import LocalMemory
 from jarvis_brain.product.app import ProductRuntime, attach_product_routes
 from jarvis_brain.product.setup import apply_setup, ensure_product_configured, load_product
+from jarvis_brain.product.doctor import doctor_report, format_doctor
 from jarvis_brain.product.start import (
     console_already_up,
-    desktop_bin,
     ensure_stack,
     hermes_up,
-    launch_desktop,
+    launch_hud,
     port_in_use,
 )
 from jarvis_brain.turn import run_text_turn, speak_reply
@@ -214,20 +214,17 @@ async def _serve_http(
     await uvicorn.Server(config).serve()
 
 
-async def _open_desktop(port: int) -> int:
-    if desktop_bin() is None:
-        print(
-            "Desktop app not built yet. The product is the Tauri window, not a browser.\n"
-            "Build: cd desktop && npm install && npx tauri build",
-            file=sys.stderr,
-        )
+async def _open_desktop(port: int, *, hud: str = "auto") -> int:
+    print(f"Opening JARVIS · brain http://127.0.0.1:{port}/", flush=True)
+    try:
+        proc = launch_hud(brain_url=f"http://127.0.0.1:{port}", prefer=hud)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
         return 1
-    print(f"Opening JARVIS desktop · brain http://127.0.0.1:{port}/", flush=True)
-    proc = launch_desktop(brain_url=f"http://127.0.0.1:{port}")
     return int(proc.wait())
 
 
-async def _start() -> int:
+async def _start(hud: str = "auto") -> int:
     os.environ.setdefault("JARVIS_BUS_HOST", "127.0.0.1")
     product, created = ensure_product_configured()
     if created:
@@ -240,7 +237,7 @@ async def _start() -> int:
     _apply_saved_product()
     cfg = BrainConfig.from_env()
     if console_already_up(cfg.bus_port):
-        return await _open_desktop(cfg.bus_port)
+        return await _open_desktop(cfg.bus_port, hud=hud)
     if port_in_use(cfg.bus_port):
         print(
             f"Port {cfg.bus_port} is already in use by another process.",
@@ -268,7 +265,7 @@ async def _start() -> int:
             if console_already_up(cfg.bus_port):
                 break
             await asyncio.sleep(0.1)
-        return await _open_desktop(cfg.bus_port)
+        return await _open_desktop(cfg.bus_port, hud=hud)
     except HermesError as exc:
         print(f"Hermes error: {exc}", file=sys.stderr)
         return 1
@@ -346,6 +343,12 @@ def _cmd_setup(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_doctor() -> int:
+    report = doctor_report()
+    print(format_doctor(report), flush=True)
+    return 0 if report["ready"] else 1
+
+
 def _cmd_status() -> int:
     cfg = BrainConfig.from_env()
     product = load_product()
@@ -378,7 +381,16 @@ def main(argv: list[str] | None = None) -> int:
     setup.add_argument("--base-url", help="OpenAI-compatible base URL (custom)")
 
     sub.add_parser("status", help="show product / Hermes / TTS")
-    sub.add_parser("start", help="open the desktop app")
+    sub.add_parser("doctor", help="Pop!_OS preflight (required vs optional)")
+    start = sub.add_parser("start", help="open the desktop app (Tauri or kiosk)")
+    start.add_argument(
+        "--hud",
+        choices=("auto", "tauri", "kiosk"),
+        default="auto",
+        help="auto = Tauri if built, else Chromium kiosk",
+    )
+    app = sub.add_parser("app", help="same as start")
+    app.add_argument("--hud", choices=("auto", "tauri", "kiosk"), default="auto")
 
     chat = sub.add_parser("chat", help="text turn in the terminal")
     chat.add_argument("-m", "--message", help="single message, then exit")
@@ -392,15 +404,16 @@ def main(argv: list[str] | None = None) -> int:
     speak.add_argument("--wav", default="/tmp/jarvis-speak.wav")
     speak.add_argument("--voice", default="jarvis", choices=("jarvis", "companion"))
     sub.add_parser("serve", help="brain API only (no window)")
-    sub.add_parser("app", help="same as start")
 
     args = parser.parse_args(argv)
     if args.cmd == "setup":
         return _cmd_setup(args)
     if args.cmd == "status":
         return _cmd_status()
+    if args.cmd == "doctor":
+        return _cmd_doctor()
     if args.cmd in {"start", "app"}:
-        return asyncio.run(_start())
+        return asyncio.run(_start(getattr(args, "hud", "auto")))
     if args.cmd == "serve":
         return asyncio.run(_serve_only())
     if args.cmd == "speak":

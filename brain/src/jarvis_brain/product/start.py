@@ -258,6 +258,31 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
 
+def chrome_bin() -> str | None:
+    for name in (
+        "chromium-browser",
+        "chromium",
+        "google-chrome-stable",
+        "google-chrome",
+        "brave-browser",
+    ):
+        found = shutil_which(name)
+        if found:
+            return found
+    return None
+
+
+def kiosk_script() -> Path | None:
+    env = os.environ.get("JARVIS_KIOSK_BIN")
+    if env and Path(env).is_file():
+        return Path(env)
+    script = repo_root() / "deploy" / "kiosk" / "jarvis-kiosk.sh"
+    if script.is_file():
+        return script
+    found = shutil_which("jarvis-kiosk")
+    return Path(found) if found else None
+
+
 def desktop_bin() -> Path | None:
     env = os.environ.get("JARVIS_DESKTOP_BIN")
     if env and Path(env).is_file():
@@ -286,3 +311,31 @@ def launch_desktop(*, brain_url: str) -> subprocess.Popen:
     env["JARVIS_BRAIN_URL"] = brain_url
     env.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
     return subprocess.Popen([str(binary)], env=env)
+
+
+def launch_kiosk(*, brain_url: str) -> subprocess.Popen:
+    script = kiosk_script()
+    if script is None:
+        raise RuntimeError("No hay script de kiosk (deploy/kiosk/jarvis-kiosk.sh).")
+    if chrome_bin() is None:
+        raise RuntimeError(
+            "No hay Chromium. En Pop: sudo apt install chromium-browser\n"
+            "O compila Tauri: cd desktop && npm install && npx tauri build"
+        )
+    env = os.environ.copy()
+    env["JARVIS_BRAIN_URL"] = brain_url
+    env.setdefault("JARVIS_ROOT", str(repo_root()))
+    return subprocess.Popen(["bash", str(script)], env=env)
+
+
+def launch_hud(*, brain_url: str, prefer: str = "auto") -> subprocess.Popen:
+    """Tauri if built; Chromium kiosk otherwise. Product HUD is still Tauri."""
+    mode = (prefer or "auto").strip().lower()
+    if mode not in {"auto", "tauri", "kiosk"}:
+        mode = "auto"
+    if mode != "kiosk" and desktop_bin() is not None:
+        return launch_desktop(brain_url=brain_url)
+    if mode == "tauri":
+        return launch_desktop(brain_url=brain_url)
+    print("Tauri no está compilado. Abriendo kiosk Chromium (prueba).", flush=True)
+    return launch_kiosk(brain_url=brain_url)

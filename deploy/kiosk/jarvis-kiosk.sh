@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # Chromium kiosk fallback. The product HUD is the Tauri window.
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+if [[ -n "${JARVIS_ROOT:-}" && -d "$JARVIS_ROOT/desktop/ui" ]]; then
+  ROOT="$JARVIS_ROOT"
+elif [[ -d "${HOME}/.local/share/jarvis/src/desktop/ui" ]]; then
+  ROOT="${HOME}/.local/share/jarvis/src"
+else
+  ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+fi
 PORT="${JARVIS_KIOSK_PORT:-4173}"
 URL="http://127.0.0.1:${PORT}/"
 DATA="${JARVIS_KIOSK_PROFILE:-$HOME/.local/share/jarvis/kiosk}"

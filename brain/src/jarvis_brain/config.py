@@ -28,7 +28,7 @@ def build_overlay(*, qa: bool | None = None) -> str:
 
 @dataclass(frozen=True)
 class BrainConfig:
-    bus_host: str = "0.0.0.0"
+    bus_host: str = "127.0.0.1"
     bus_port: int = 8765
     hermes_base_url: str = "http://127.0.0.1:8642"
     # Hermes refuses to start the API server if the key is < 16 chars.
@@ -42,7 +42,7 @@ class BrainConfig:
     def from_env(cls) -> BrainConfig:
         port = int(os.environ.get("PORT") or os.environ.get("JARVIS_BUS_PORT") or "8765")
         return cls(
-            bus_host=os.environ.get("JARVIS_BUS_HOST", "0.0.0.0"),
+            bus_host=os.environ.get("JARVIS_BUS_HOST", "127.0.0.1"),
             bus_port=port,
             hermes_base_url=os.environ.get(
                 "JARVIS_HERMES_URL", "http://127.0.0.1:8642"

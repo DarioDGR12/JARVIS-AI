@@ -23,6 +23,7 @@ from jarvis_brain.map.hls_proxy import fetch_hls
 from jarvis_brain.map.state import MapState
 from jarvis_brain.memory.onnx import onnx_status
 from jarvis_brain.memory.store import LocalMemory
+from jarvis_brain.product.doctor import doctor_report
 from jarvis_brain.product.providers import PROVIDERS
 from jarvis_brain.product.setup import apply_setup, load_product, public_status
 from jarvis_brain.product.start import ensure_stack
@@ -740,7 +741,12 @@ def attach_product_routes(app: FastAPI, runtime: ProductRuntime) -> FastAPI:
             "surv": runtime.surv.snapshot(),
             "voice": voice_engine_status(runtime.voice_engine),
             "hud": runtime.hud.snapshot(),
+            "doctor": doctor_report(),
         }
+
+    @app.get("/api/doctor")
+    async def doctor() -> dict:
+        return {"ok": True, **doctor_report()}
 
     @app.get("/api/voice")
     async def voice_state() -> dict:

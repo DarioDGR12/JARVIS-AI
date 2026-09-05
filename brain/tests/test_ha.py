@@ -48,5 +48,9 @@ def test_system_endpoint() -> None:
     r = client.get("/api/system")
     assert r.status_code == 200
     assert "stats" in r.json()
+    assert "doctor" in r.json()
+    doc = client.get("/api/doctor")
+    assert doc.status_code == 200
+    assert "checks" in doc.json()
     auth = client.get("/api/auth")
     assert auth.json()["enrolled"] is False

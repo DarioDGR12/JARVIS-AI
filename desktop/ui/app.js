@@ -1157,6 +1157,14 @@
       }
       const armBtn = document.getElementById("btn-arm");
       if (armBtn) armBtn.textContent = surv.armed ? "Desarmar puerta" : "Armar puerta";
+      const doc = s.doctor || {};
+      const doctorLine = document.getElementById("doctor-line");
+      if (doctorLine) {
+        const bad = (doc.checks || []).filter((c) => !c.ok && c.required).map((c) => c.id);
+        doctorLine.textContent = "Doctor: "
+          + (doc.ready ? "listo para Pop" : ("falta " + (bad.join(", ") || "?")))
+          + " · jarvis doctor";
+      }
     } catch (err) {
       document.getElementById("sys-stats").textContent = String(err);
     }
