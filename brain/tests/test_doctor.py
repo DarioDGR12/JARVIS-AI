@@ -22,6 +22,7 @@ def test_kiosk_script_in_repo() -> None:
     script = kiosk_script()
     assert script is not None
     assert script.is_file()
+    assert "firefox" in script.read_text()
     assert (repo_root() / "docs" / "POPOS.md").is_file()
     assert (repo_root() / "scripts" / "popos-trial.sh").is_file()
 
@@ -32,7 +33,7 @@ def test_launch_hud_kiosk_without_chrome(monkeypatch) -> None:
     try:
         launch_hud(brain_url="http://127.0.0.1:8765", prefer="kiosk")
     except RuntimeError as exc:
-        assert "Chromium" in str(exc)
+        assert "kiosk" in str(exc).lower() or "Firefox" in str(exc)
     else:
         raise AssertionError("expected RuntimeError")
 

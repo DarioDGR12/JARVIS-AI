@@ -260,11 +260,12 @@ def repo_root() -> Path:
 
 def chrome_bin() -> str | None:
     for name in (
-        "chromium-browser",
-        "chromium",
         "google-chrome-stable",
         "google-chrome",
         "brave-browser",
+        "chromium",
+        "chromium-browser",
+        "firefox",
     ):
         found = shutil_which(name)
         if found:
@@ -319,7 +320,8 @@ def launch_kiosk(*, brain_url: str) -> subprocess.Popen:
         raise RuntimeError("No hay script de kiosk (deploy/kiosk/jarvis-kiosk.sh).")
     if chrome_bin() is None:
         raise RuntimeError(
-            "No hay Chromium. En Pop: sudo apt install chromium-browser\n"
+            "No hay Chrome/Firefox para el kiosk.\n"
+            "En Pop no instales chromium-browser (es un snap). Usa Chrome, Brave o Firefox.\n"
             "O compila Tauri: cd desktop && npm install && npx tauri build"
         )
     env = os.environ.copy()

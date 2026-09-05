@@ -24,15 +24,18 @@ for _ in $(seq 1 40); do
   sleep 0.15
 done
 CHROME=""
-for bin in chromium-browser chromium google-chrome-stable google-chrome brave-browser; do
+for bin in google-chrome-stable google-chrome brave-browser chromium chromium-browser firefox; do
   if command -v "$bin" >/dev/null; then
     CHROME="$bin"
     break
   fi
 done
 if [[ -z "$CHROME" ]]; then
-  echo "No Chromium-class browser. Build the Tauri app instead: cd desktop && npx tauri build" >&2
+  echo "No Chrome/Firefox. Do not apt-install chromium-browser on Pop 24.04 (snap). Build Tauri or install Google Chrome." >&2
   exit 1
+fi
+if [[ "$CHROME" == *firefox* ]]; then
+  exec "$CHROME" --kiosk --profile "$DATA" "$URL"
 fi
 exec "$CHROME" \
   --user-data-dir="$DATA" \

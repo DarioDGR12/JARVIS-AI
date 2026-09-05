@@ -77,6 +77,11 @@ def test_repo_contains_tauri_app() -> None:
     assert (root / "voices" / "jarvis.wav").is_file()
     assert (root / "docs" / "POPOS.md").is_file()
     assert (root / "scripts" / "popos-trial.sh").is_file()
+    install = (root / "scripts" / "install.sh").read_text()
+    assert "python3 -m venv" in install
+    assert "tesseract-ocr" in install
+    assert "jarvis/venv" in install
+    assert all("chromium-browser \\" not in line for line in install.splitlines())
     assert (root / "deploy" / "env" / "brain.env.example").is_file()
     assert (root / "deploy" / "desktop" / "jarvis.desktop").is_file()
     assert (root / "brain" / "scripts" / "detect_template.py").is_file()

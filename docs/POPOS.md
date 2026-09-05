@@ -13,18 +13,23 @@ bash scripts/popos-trial.sh --apt --hermes
 # o, si ya tienes deps: bash scripts/install.sh
 ```
 
-Si ya clonaste `main`:
+Si ya clonaste `main`, o el primer `--apt` rompió `dpkg` por el snap de Chromium:
 
 ```bash
 cd ~/JARVIS-AI
 git fetch origin
 git checkout cursor/integration-plan-5cec
+git pull
+sudo dpkg --configure -a
+sudo apt-get -f install -y
 bash scripts/popos-trial.sh --apt --hermes
 ```
 
-`--apt` instala Chromium, Tesseract, ffmpeg, xdotool, webkit (sudo).  
-`--hermes` clona Hermes Agent en `~/.local/share/jarvis/hermes-agent` (hace falta `uv`).  
-`--stt` instala openWakeWord + faster-whisper (opcional; el HUD ya oye con Web Speech).
+`--apt` instala Tesseract, ffmpeg, xdotool, webkit (sudo). **No** instala `chromium-browser` (en Pop 24.04 es un snap y suele fallar). El kiosk usa Chrome, Brave o Firefox si ya los tienes.  
+`--hermes` clona Hermes Agent en `~/.local/share/jarvis/hermes-agent` (instala `uv` si falta).  
+`--stt` instala openWakeWord + faster-whisper en el **venv** (opcional; el HUD ya oye con Web Speech).
+
+El cerebro se instala en `~/.local/share/jarvis/venv` (PEP 668: no se toca el Python del sistema). El comando queda en `~/.local/bin/jarvis`.
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"

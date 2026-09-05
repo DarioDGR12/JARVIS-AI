@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Pop!_OS first install: brain + Piper + user units + HUD (Tauri if possible).
+# Pop!_OS first install: venv + Piper + user units + HUD.
+# Never pip-installs into the system Python (PEP 668).
+# Never apt-installs chromium-browser (Noble snap; times out).
 #   bash scripts/install.sh
 #   bash scripts/install.sh --apt --hermes
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PY="${PYTHON:-python3}"
+VENV="${JARVIS_VENV:-$HOME/.local/share/jarvis/venv}"
+BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
 DO_APT=0
 DO_HERMES=0
 DO_STT=0
@@ -24,54 +27,65 @@ done
 
 if [[ "$DO_APT" -eq 1 ]]; then
   sudo apt-get update
+  sudo dpkg --configure -a || true
+  sudo apt-get -f install -y || true
   sudo apt-get install -y \
-    python3-pip python3-venv python3-dev \
+    python3-venv python3-dev python3-full \
     curl git pkg-config libssl-dev build-essential \
     tesseract-ocr tesseract-ocr-spa ffmpeg xdotool \
-    chromium-browser \
-    libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev || true
+    libwebkit2gtk-4.1-dev
 fi
 
-"$PY" -m pip install -e "$ROOT/brain"
-if [[ "$DO_STT" -eq 1 ]]; then
-  bash "$ROOT/brain/scripts/install_stt.sh"
+mkdir -p "$(dirname "$VENV")" "$BIN_DIR"
+if [[ ! -x "$VENV/bin/python" ]]; then
+  python3 -m venv "$VENV"
 fi
+"$VENV/bin/pip" install -U pip wheel
+"$VENV/bin/pip" install -e "$ROOT/brain"
+if [[ "$DO_STT" -eq 1 ]]; then
+  "$VENV/bin/pip" install -e "$ROOT/brain[stt]"
+fi
+ln -sfn "$VENV/bin/jarvis" "$BIN_DIR/jarvis"
+export PATH="$BIN_DIR:$PATH"
+export PYTHON="$VENV/bin/python"
+
 bash "$ROOT/brain/scripts/setup_piper.sh"
-"$PY" "$ROOT/desktop/scripts/generate_icons.py" || true
+"$VENV/bin/python" "$ROOT/desktop/scripts/generate_icons.py" || true
 
 if [[ "$DO_HERMES" -eq 1 ]]; then
+  if ! command -v uv >/dev/null; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
   bash "$ROOT/scripts/install-hermes.sh"
 elif [[ ! -x "${HERMES_BIN:-}" ]] && ! command -v hermes >/dev/null \
-  && [[ ! -x /tmp/hermes-agent-src/.venv/bin/hermes ]] \
   && [[ ! -x "$HOME/.local/share/jarvis/hermes-agent/.venv/bin/hermes" ]] \
   && [[ ! -x "$HOME/.local/bin/hermes" ]]; then
   echo "Hermes Agent is not on PATH."
   echo "  bash scripts/install-hermes.sh"
-  echo "  or: export HERMES_BIN=/path/to/.venv/bin/hermes"
 fi
 
 if [[ "$DO_TAURI" -eq 1 ]] && command -v npm >/dev/null && command -v cargo >/dev/null; then
   (cd "$ROOT/desktop" && npm install && npx tauri build --debug)
 elif [[ "$DO_TAURI" -eq 1 ]]; then
-  echo "npm/cargo missing: HUD will use Chromium kiosk until you build Tauri."
-  echo "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
-  echo "  then: cd desktop && npm install && npx tauri build"
+  echo "npm/cargo missing: HUD will use the kiosk (Chrome / Firefox) until you build Tauri."
 fi
 
+export PYTHON="$VENV/bin/python"
 bash "$ROOT/scripts/install-user.sh"
 
-export PATH="${XDG_BIN_HOME:-$HOME/.local/bin}:$PATH"
-if ! "$PY" -c "import jarvis_brain" 2>/dev/null; then
-  echo "pip install -e brain failed" >&2
+if ! "$VENV/bin/python" -c "import jarvis_brain" 2>/dev/null; then
+  echo "venv install failed: $VENV" >&2
   exit 1
 fi
 if [[ ! -f "${XDG_CONFIG_HOME:-$HOME/.config}/jarvis/product.yaml" ]]; then
-  "$PY" -m jarvis_brain setup --demo || true
+  "$VENV/bin/jarvis" setup --demo || true
 fi
 
 echo
 echo "Install done. Next:"
-echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+echo "  export PATH=\"$BIN_DIR:\$PATH\""
 echo "  jarvis doctor"
-echo "  jarvis start          # Tauri, or Chromium kiosk if not built"
+echo "  jarvis start"
+echo "Python: $VENV/bin/python"
 echo "Guide: docs/POPOS.md"

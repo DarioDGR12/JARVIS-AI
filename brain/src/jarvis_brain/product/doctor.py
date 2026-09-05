@@ -70,7 +70,7 @@ def collect_checks() -> list[dict[str, Any]]:
         _check(
             "hermes",
             bool(hermes),
-            hermes or "falta Hermes Agent (HERMES_BIN o ~/.local/bin/hermes)",
+            hermes or "falta Hermes (bash scripts/install-hermes.sh)",
             required=True,
         )
     )
